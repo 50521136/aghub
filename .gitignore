@@ -38,6 +38,10 @@
 /test-reports/
 AdGuardHome
 AdGuardHome.exe
+aghub
+aghub.exe
+aghub.bak
+dist-*/
 AdGuardHome.yaml*
 coverage.txt
 node_modules/
