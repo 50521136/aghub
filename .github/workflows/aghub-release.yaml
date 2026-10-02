@@ -71,3 +71,5 @@ jobs:
             dist-aghub/*.tar.gz
             dist-aghub/*.zip
             dist-aghub/checksums.txt
+
+# 触发 GitHub 重新索引该 workflow 文件。
