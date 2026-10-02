@@ -39,6 +39,23 @@ func (s *Server) Wrap(h proxy.Handler) (wrapped proxy.Handler) {
 			return s.serveBlockedResponse(pctx)
 		}
 
+		if s.userQuotas != nil {
+			var ok bool
+			var reason string
+			ok, reason = s.userQuotas.AllowQuery(clientID, pctx.Addr.Addr())
+			if !ok {
+				l.DebugContext(
+					ctx,
+					"user is not allowed to query",
+					"client_id", clientID,
+					"ip", pctx.Addr.Addr(),
+					"reason", reason,
+				)
+
+				return s.serveBlockedResponse(pctx)
+			}
+		}
+
 		blocked = s.isBlockedHost(ctx, l, pctx.Req.Question)
 		if blocked {
 			return s.serveBlockedResponse(pctx)

@@ -35,8 +35,10 @@ import (
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering/safesearch"
 	"github.com/AdguardTeam/AdGuardHome/internal/permcheck"
 	"github.com/AdguardTeam/AdGuardHome/internal/querylog"
+	"github.com/AdguardTeam/AdGuardHome/internal/selfupdate"
 	"github.com/AdguardTeam/AdGuardHome/internal/stats"
 	"github.com/AdguardTeam/AdGuardHome/internal/updater"
+	"github.com/AdguardTeam/AdGuardHome/internal/users"
 	"github.com/AdguardTeam/AdGuardHome/internal/version"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
@@ -54,11 +56,13 @@ type homeContext struct {
 	// Modules
 	// --
 
-	clients    clientsContainer   // per-client-settings module
-	stats      stats.Interface    // statistics module
-	queryLog   querylog.QueryLog  // query log module
-	dnsServer  *dnsforward.Server // DNS module
-	dhcpServer dhcpd.Interface    // DHCP module
+	clients    clientsContainer    // per-client-settings module
+	stats      stats.Interface     // statistics module
+	queryLog   querylog.QueryLog   // query log module
+	dnsServer  *dnsforward.Server  // DNS module
+	dhcpServer dhcpd.Interface     // DHCP module
+	users      *users.Manager      // user quota management module
+	updater    *selfupdate.Updater // online update module
 
 	filters *filtering.DNSFilter // DNS filtering module
 
@@ -819,8 +823,16 @@ func run(
 	err = initContextClients(ctx, baseLogger, sigHdlr, confModifier, httpReg, workDir, hc)
 	fatalOnError(ctx, baseLogger, err)
 
+	err = initUserQuotas(ctx, baseLogger, httpReg, workDir)
+	fatalOnError(ctx, baseLogger, err)
+
+	err = initSelfUpdate(ctx, baseLogger)
+	fatalOnError(ctx, baseLogger, err)
+
 	tlsMgr, err := newTLSManager(ctx, baseLogger, sigHdlr, confModifier)
 	fatalOnError(ctx, baseLogger, err)
+
+	initUserQuotasDomain(tlsMgr)
 
 	err = setupDNSFilteringConf(
 		ctx,
@@ -1252,6 +1264,8 @@ func cleanup(ctx context.Context, l *slog.Logger, hc *aghnet.HostsContainer) {
 	if err != nil {
 		l.ErrorContext(ctx, "stopping dns server", slogutil.KeyError, err)
 	}
+
+	closeUserQuotas(ctx, l)
 
 	if globalContext.dhcpServer != nil {
 		err = globalContext.dhcpServer.Stop()

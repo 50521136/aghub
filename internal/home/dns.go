@@ -117,6 +117,7 @@ func initDNS(
 		EtcHosts:    hc,
 		LocalDomain: config.DHCP.LocalDomainName,
 		TLSManager:  tlsManager,
+		UserQuotas:  globalContext.users,
 	}
 
 	err = initDNSServer(

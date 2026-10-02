@@ -192,6 +192,8 @@ func (web *webAPI) registerControlHandlers() {
 	)
 	web.httpReg.Register(http.MethodPost, "/control/update", web.handleUpdate)
 
+	web.registerUpdateHandlers()
+
 	web.httpReg.Register(http.MethodGet, "/control/status", web.handleStatus)
 	web.httpReg.Register(
 		http.MethodPost,

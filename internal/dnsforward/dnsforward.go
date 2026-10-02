@@ -186,6 +186,9 @@ type Server struct {
 
 	// isRunning is true if the DNS server is running.
 	isRunning bool
+
+	// userQuotas, if not nil, is used to enforce the per-user query quotas.
+	userQuotas UserQuotas
 }
 
 // defaultLocalDomainSuffix is the default suffix used to detect internal hosts
@@ -200,6 +203,9 @@ type DNSCreateParams struct {
 	Stats      stats.Interface
 	QueryLog   querylog.QueryLog
 	DHCPServer DHCP
+
+	// UserQuotas, if not nil, is used to enforce the per-user query quotas.
+	UserQuotas UserQuotas
 
 	// PrivateNets contains the private network subnets.  It must not be nil.
 	PrivateNets netutil.SubnetSet
@@ -249,6 +255,7 @@ func NewServer(p DNSCreateParams) (s *Server, err error) {
 		dhcpServer:  p.DHCPServer,
 		stats:       p.Stats,
 		queryLog:    p.QueryLog,
+		userQuotas:  p.UserQuotas,
 		privateNets: p.PrivateNets,
 		baseLogger:  p.Logger,
 		logger:      p.Logger.With(slogutil.KeyPrefix, "dnsforward"),
