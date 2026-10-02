@@ -1,10 +1,12 @@
 package selfupdate
 
 import (
+	"context"
 	"testing"
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // testLogger is a logger that discards all messages.
@@ -180,4 +182,39 @@ func TestFindAsset(t *testing.T) {
 	assert.NotNil(t, u.findAsset(rel, "aghub_1.0.0_linux_amd64.tar.gz"))
 	assert.Nil(t, u.findAsset(rel, "missing.tar.gz"))
 	assert.NotNil(t, u.findChecksums(rel))
+}
+
+func TestNewAssetRequest(t *testing.T) {
+	const (
+		url   = "https://github.com/owner/name/releases/download/v1/a.tar.gz"
+		proxy = "https://gh-proxy.com"
+		token = "secret-token"
+	)
+
+	t.Run("direct sends the token", func(t *testing.T) {
+		u, err := New(&Config{Logger: testLogger})
+		require.NoError(t, err)
+
+		u.token = token
+
+		req, err := u.newAssetRequest(context.Background(), url)
+		require.NoError(t, err)
+
+		assert.Equal(t, url, req.URL.String())
+		assert.Equal(t, "Bearer "+token, req.Header.Get("Authorization"))
+	})
+
+	t.Run("proxied hides the token", func(t *testing.T) {
+		u, err := New(&Config{Logger: testLogger})
+		require.NoError(t, err)
+
+		u.token = token
+		u.SetProxy(proxy)
+
+		req, err := u.newAssetRequest(context.Background(), url)
+		require.NoError(t, err)
+
+		assert.Equal(t, proxy+"/"+url, req.URL.String())
+		assert.Empty(t, req.Header.Get("Authorization"))
+	})
 }

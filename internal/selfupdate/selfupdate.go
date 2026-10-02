@@ -552,16 +552,30 @@ func (u *Updater) Apply(ctx context.Context) (err error) {
 	return nil
 }
 
-// download downloads the asset into path.
-func (u *Updater) download(ctx context.Context, asset *Asset, path string) (err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.downloadURL(asset.URL), nil)
+// newAssetRequest creates a GET request for a release asset.  The request goes
+// through the acceleration proxy when one is set.  The API token is only sent
+// when it does not, so that a third-party proxy never sees it.
+func (u *Updater) newAssetRequest(ctx context.Context, url string) (req *http.Request, err error) {
+	proxied := u.downloadURL(url)
+
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, proxied, nil)
 	if err != nil {
-		return fmt.Errorf("selfupdate: creating download request: %w", err)
+		return nil, fmt.Errorf("creating download request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", "aghub-selfupdate/"+Version)
-	if u.token != "" {
+	if u.token != "" && proxied == url {
 		req.Header.Set("Authorization", "Bearer "+u.token)
+	}
+
+	return req, nil
+}
+
+// download downloads the asset into path.
+func (u *Updater) download(ctx context.Context, asset *Asset, path string) (err error) {
+	req, err := u.newAssetRequest(ctx, asset.URL)
+	if err != nil {
+		return fmt.Errorf("selfupdate: %w", err)
 	}
 
 	resp, err := u.client.Do(req)
@@ -642,11 +656,29 @@ func (u *Updater) verifyChecksums(
 		return nil
 	}
 
-	body, err := u.get(ctx, asset.URL)
+	// The checksums file is a release asset like any other, so it has to go
+	// through the acceleration proxy as well.  Fetching it with the API
+	// request helper would bypass the proxy and fail on networks that cannot
+	// reach the download host.
+	req, err := u.newAssetRequest(ctx, asset.URL)
 	if err != nil {
 		return fmt.Errorf("selfupdate: fetching checksums: %w", err)
 	}
-	defer func() { _ = body.Close() }()
+
+	resp, err := u.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("selfupdate: fetching checksums: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf(
+			"selfupdate: fetching checksums: unexpected status %s",
+			resp.Status,
+		)
+	}
+
+	body := resp.Body
 
 	data, err := io.ReadAll(io.LimitReader(body, 1<<20))
 	if err != nil {
