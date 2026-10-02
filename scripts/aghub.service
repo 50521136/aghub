@@ -1,0 +1,26 @@
+[Unit]
+Description=AGHub — AdGuard Home with built-in user quota management
+Documentation=https://github.com/AGHUB_PLACEHOLDER
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+WorkingDirectory=/opt/aghub
+ExecStart=/opt/aghub/aghub --no-check-update -w /opt/aghub
+ExecReload=/bin/kill -HUP $MAINPID
+
+# The online update replaces the binary in place and calls execve(2) on itself,
+# so the PID stays the same and systemd does not need to restart the unit.
+KillMode=process
+
+# Uncomment and set the repository to enable the online update from the web UI.
+#Environment="AGHUB_UPDATE_REPO=owner/aghub"
+
+# Uncomment to speed up the download in networks where GitHub is slow.
+#Environment="AGHUB_UPDATE_PROXY=https://gh-proxy.com/"
+
+[Install]
+WantedBy=multi-user.target
