@@ -15,6 +15,7 @@ import { initSettings, toggleSetting, settingsState } from 'panel/stores/setting
 import { getStatsConfig, setStatsConfig, resetStats, statsState } from 'panel/stores/stats';
 import { getLogsConfig, setLogsConfig, clearLogs, queryLogsState } from 'panel/stores/queryLogs';
 import { getFilteringStatus, filteringState } from 'panel/stores/filtering';
+import { getUsers, saveSettings, usersState } from 'panel/stores/users';
 import { SAFE_SEARCH_PROVIDERS } from 'panel/helpers/constants';
 import { addSuccessToast } from 'panel/stores/toasts';
 
@@ -39,6 +40,7 @@ export const Settings = () => {
         getStatsConfig();
         getFilteringStatus();
         getLogsConfig();
+        getUsers();
     });
 
     const [logsModalOpen, setLogsModalOpen] = createSignal(false);
@@ -52,6 +54,25 @@ export const Settings = () => {
 
     const safesearch = createMemo(() => settingsState.settingsList?.safesearch);
     const safesearchEnabled = createMemo(() => safesearch()?.enabled ?? false);
+
+    // The deny-unmatched gate belongs to the user manager but is a global
+    // setting, so its switch lives here.  It is optimistic: flip it right away,
+    // then keep the new position only if the server accepted it.  The effect
+    // re-syncs it whenever the stored setting changes.
+    const [denyUnmatched, setDenyUnmatched] = createSignal(false);
+
+    createEffect(() => {
+        setDenyUnmatched(usersState.settings.deny_unmatched ?? false);
+    });
+
+    const changeDenyUnmatched = async (value: boolean) => {
+        setDenyUnmatched(value);
+
+        const ok = await saveSettings({ deny_unmatched: value });
+        if (!ok) {
+            setDenyUnmatched(!value);
+        }
+    };
 
     const logsRetentionSummary = createMemo(() => getRetentionSummary(queryLogsState.interval));
 
@@ -220,6 +241,15 @@ export const Settings = () => {
                                 enabled={safesearchEnabled()}
                                 processing={safesearchProcessing()}
                                 onSave={handleSafeSearchSave}
+                            />
+
+                            <SettingRow
+                                variant="switch"
+                                id="deny_unmatched"
+                                title={intl.getMessage('users_deny_unmatched')}
+                                description={intl.getMessage('users_deny_unmatched_hint')}
+                                checked={denyUnmatched()}
+                                onChange={changeDenyUnmatched}
                             />
 
                             <div class={s.section} id="query-log">

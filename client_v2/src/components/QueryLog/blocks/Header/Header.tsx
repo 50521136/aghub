@@ -12,6 +12,7 @@ import { InlineLoader } from 'panel/common/ui/Loader';
 import { IOption } from 'panel/lib/helpers/utils';
 import { DEBOUNCE_FILTER_TIMEOUT } from 'panel/helpers/constants';
 import { useIsMobile } from 'panel/hooks/useMediaQuery';
+import { usersState } from 'panel/stores/users';
 
 import s from './Header.module.pcss';
 
@@ -108,6 +109,43 @@ export const Header = (props: Props) => {
     const [searchValue, setSearchValue] = createSignal(untrack(() => props.currentSearch));
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const isMobile = useIsMobile();
+
+    const userOptions = (): IOption<string>[] => {
+        const all: IOption<string>[] = [
+            {
+                value: '',
+                get label() {
+                    return intl.getMessage('query_log_all_users');
+                },
+            },
+        ];
+
+        for (const user of usersState.users) {
+            for (const id of user.ids ?? []) {
+                all.push({
+                    value: id,
+                    get label() {
+                        return user.name && user.name !== id ? `${user.name} · ${id}` : id;
+                    },
+                });
+            }
+        }
+
+        return all;
+    };
+
+    // This dropdown is a view over the search box: picking a user puts their
+    // identifier in it, quoted.  The quotes matter — they make the search
+    // strict, so it compares the client ID exactly instead of also matching any
+    // domain that happens to contain the same letters.  It also runs on the
+    // server against the whole log, where a client-side filter would only see
+    // the rows that are loaded.
+    const selectedUser = createMemo(() => {
+        const options = userOptions();
+        const search = props.currentSearch.trim().replace(/^"(.*)"$/, '$1');
+
+        return options.find((option) => option.value === search) || options[0];
+    });
 
     createEffect(
         on(
@@ -233,6 +271,22 @@ export const Header = (props: Props) => {
                             optionTestIdPrefix="query-log-reason-option"
                             onChange={(option: IOption<string>) =>
                                 props.onReasonFilterChange(option.value)
+                            }
+                            menuSize="big"
+                            menuPosition="right"
+                            borderless={!isMobile()}
+                            class={s.filterSelect}
+                        />
+                    </div>
+
+                    <div class={s.filterField} data-testid="query-log-user-filter">
+                        <Select
+                            size="responsive"
+                            options={userOptions()}
+                            value={selectedUser()}
+                            optionTestIdPrefix="query-log-user-option"
+                            onChange={(option: IOption<string>) =>
+                                props.onSearch(option.value ? `"${option.value}"` : '')
                             }
                             menuSize="big"
                             menuPosition="right"

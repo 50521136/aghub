@@ -58,8 +58,21 @@ import type {
     StatsParams,
     TlsConfig,
     TlsConfigBody,
+    UpdateCheckResponse,
+    UpdateStatusResponse,
     UpstreamsConfig,
     UpstreamsConfigResponse,
+    UserActionResponse,
+    UserAddRequest,
+    UserBulkAddRequest,
+    UserBulkAddResponse,
+    UserSettings,
+    UserSettingsResponse,
+    UserUpdateRequest,
+    UsersImportRequest,
+    UsersList,
+    UsersToggleRequest,
+    UsersUIDsRequest,
     VersionInfo,
 } from './model';
 
@@ -1509,5 +1522,228 @@ export const mobileConfigDoT = async (
     return customFetch<void>(getMobileConfigDoTUrl(params), {
         ...options,
         method: 'GET',
+    });
+};
+
+export const getUsersListUrl = () => {
+    return `control/users/list`;
+};
+
+/**
+ * @summary Get the managed users and their usage
+ */
+export const usersList = async (options?: RequestInit): Promise<UsersList> => {
+    return customFetch<UsersList>(getUsersListUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getUsersSetSettingsUrl = () => {
+    return `control/users/settings`;
+};
+
+/**
+ * @summary Update the user management settings
+ */
+export const usersSetSettings = async (
+    userSettings: UserSettings,
+    options?: RequestInit,
+): Promise<UserSettingsResponse> => {
+    return customFetch<UserSettingsResponse>(getUsersSetSettingsUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(userSettings),
+    });
+};
+
+export const getUsersExportUrl = () => {
+    return `control/users/export`;
+};
+
+/**
+ * @summary Export the managed users
+ */
+export const usersExport = async (options?: RequestInit): Promise<UsersImportRequest> => {
+    return customFetch<UsersImportRequest>(getUsersExportUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getUsersAddUrl = () => {
+    return `control/users/add`;
+};
+
+/**
+ * @summary Add a managed user
+ */
+export const usersAdd = async (
+    userAddRequest: UserAddRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersAddUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(userAddRequest),
+    });
+};
+
+export const getUsersUpdateUrl = () => {
+    return `control/users/update`;
+};
+
+/**
+ * @summary Update a managed user
+ */
+export const usersUpdate = async (
+    userUpdateRequest: UserUpdateRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersUpdateUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(userUpdateRequest),
+    });
+};
+
+export const getUsersDeleteUrl = () => {
+    return `control/users/delete`;
+};
+
+/**
+ * @summary Remove managed users
+ */
+export const usersDelete = async (
+    usersUIDsRequest: UsersUIDsRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersDeleteUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(usersUIDsRequest),
+    });
+};
+
+export const getUsersResetUrl = () => {
+    return `control/users/reset`;
+};
+
+/**
+ * @summary Reset the request counters of the managed users
+ */
+export const usersReset = async (
+    usersUIDsRequest: UsersUIDsRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersResetUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(usersUIDsRequest),
+    });
+};
+
+export const getUsersToggleUrl = () => {
+    return `control/users/toggle`;
+};
+
+/**
+ * @summary Enable or disable managed users
+ */
+export const usersToggle = async (
+    usersToggleRequest: UsersToggleRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersToggleUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(usersToggleRequest),
+    });
+};
+
+export const getUsersImportUrl = () => {
+    return `control/users/import`;
+};
+
+/**
+ * @summary Import managed users, replacing the existing ones
+ */
+export const usersImport = async (
+    usersImportRequest: UsersImportRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersImportUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(usersImportRequest),
+    });
+};
+
+export const getUsersBulkAddUrl = () => {
+    return `control/users/bulk-add`;
+};
+
+/**
+ * @summary Create users from a line-based payload
+ */
+export const usersBulkAdd = async (
+    userBulkAddRequest: UserBulkAddRequest,
+    options?: RequestInit,
+): Promise<UserBulkAddResponse> => {
+    return customFetch<UserBulkAddResponse>(getUsersBulkAddUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(userBulkAddRequest),
+    });
+};
+
+export const getAghubUpdateStatusUrl = () => {
+    return `control/aghub/update/status`;
+};
+
+/**
+ * @summary Get the current update state
+ */
+export const aghubUpdateStatus = async (options?: RequestInit): Promise<UpdateStatusResponse> => {
+    return customFetch<UpdateStatusResponse>(getAghubUpdateStatusUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getAghubUpdateCheckUrl = () => {
+    return `control/aghub/update/check`;
+};
+
+/**
+ * @summary Check GitHub for a newer release
+ */
+export const aghubUpdateCheck = async (options?: RequestInit): Promise<UpdateCheckResponse> => {
+    return customFetch<UpdateCheckResponse>(getAghubUpdateCheckUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getAghubUpdateApplyUrl = () => {
+    return `control/aghub/update/apply`;
+};
+
+/**
+ * Starts the update in the background.  The process is restarted automatically when the update is installed successfully.
+ * @summary Download and install the latest release
+ */
+export const aghubUpdateApply = async (options?: RequestInit): Promise<UpdateStatusResponse> => {
+    return customFetch<UpdateStatusResponse>(getAghubUpdateApplyUrl(), {
+        ...options,
+        method: 'POST',
     });
 };

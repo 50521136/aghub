@@ -7,6 +7,7 @@ import { Icon } from 'panel/common/ui/Icon';
 import intl from 'panel/common/intl';
 import { Filter } from 'panel/helpers/helpers';
 import {
+    agHubUserFor,
     formatLogDate,
     formatLogTime,
     getClientLocation,
@@ -44,7 +45,12 @@ type Props = {
 export const LogCard = (props: Props) => {
     const displayDomain = () => props.entry.unicodeName || props.entry.domain;
     const proto = () => getProtocolName(props.entry.client_proto);
-    const clientDetails = () => props.entry.client_info?.name || props.entry.client_id;
+    // The user name beats reverse DNS, which for a carrier IP is often junk
+    // ("localhost"), and beats the raw identifier for a human reader.
+    const clientDetails = () =>
+        agHubUserFor(props.entry.client_id) ||
+        props.entry.client_info?.name ||
+        props.entry.client_id;
     const clientLocation = () => getClientLocation(props.entry.client_info?.whois);
     const statusKey = () =>
         getQueryStatusKey(props.entry.reason, props.entry.originalResponse ?? []);

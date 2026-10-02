@@ -1,0 +1,133 @@
+.dialog {
+    /* Wider than the single-user dialog because the payload is a block of text.
+       Comfortably above the 480px the two 200px footer buttons need. */
+    width: 560px;
+    max-width: calc(100vw - 32px);
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    /* The shared dialog body has no horizontal padding of its own, so this
+       keeps the fields on the same edge as the title and the footer buttons. */
+    padding: 0 16px;
+}
+
+.textField {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.fieldLabel {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}
+
+.textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 168px;
+    padding: 10px 12px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 8px;
+    background: var(--default-page-background);
+    color: var(--default-main-text);
+    font-family: var(--monospace-font-family, monospace);
+    font-size: var(--fs-text-t3);
+    line-height: 1.6;
+    tab-size: 4;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+    /* No resize handle on touch screens. */
+    resize: none;
+
+    @media (min-width: 768px) {
+        resize: vertical;
+    }
+
+    &:focus {
+        outline: none;
+        border-color: var(--pressed-link);
+    }
+}
+
+.hint {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.counter {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}
+
+.errorBox {
+    max-height: 220px;
+    padding: 10px 12px;
+    overflow-y: auto;
+    border: 1px solid var(--default-error-link);
+    border-radius: 8px;
+    background: var(--default-page-background);
+}
+
+.errorTitle {
+    margin-bottom: 6px;
+    color: var(--default-error-link);
+    font-size: var(--fs-text-t3);
+    font-weight: var(--weight-medium);
+    line-height: var(--lh-t3-normal);
+}
+
+.errorList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.errorItem {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.errorLine {
+    flex: none;
+    color: var(--default-error-link);
+    font-weight: var(--weight-medium);
+}
+
+.errorMessage {
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.errorText {
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--pressed-page-background);
+    color: var(--default-description-text);
+    font-family: var(--monospace-font-family, monospace);
+    font-size: var(--fs-text-t4);
+}
+
+/* The shared footer sets no justify-content, so the buttons sit at the start
+   edge and leave a gap under the full-width fields.  Right-aligning them lines
+   the last button up with the right edge of the fields. */
+.footer {
+    justify-content: flex-end;
+}

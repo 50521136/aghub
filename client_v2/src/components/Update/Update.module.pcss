@@ -1,0 +1,188 @@
+/* The page body is padded to line up with the shared page title, which already
+   carries a 16px horizontal padding of its own. */
+.body {
+    padding: 0 16px;
+}
+
+.desc {
+    max-width: 620px;
+    margin: 8px 0 0;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t2);
+    line-height: var(--lh-t2-normal);
+}
+
+.loader {
+    margin: 48px auto;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    max-width: 620px;
+    margin-top: 16px;
+}
+
+.card {
+    min-width: 0;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    box-shadow: var(--default-cards-box-shadow);
+}
+
+.cardLabel {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.cardValue {
+    margin-top: 4px;
+    color: var(--default-main-text);
+    font-size: var(--fs-title-h5);
+    line-height: var(--lh-h5-normal);
+    font-weight: var(--weight-semi-bold);
+    word-break: break-all;
+}
+
+.cardHint {
+    margin-top: 4px;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    word-break: break-all;
+}
+
+.notice {
+    max-width: 620px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--page-background-additional);
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+}
+
+.error {
+    max-width: 620px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--page-background-additional);
+    color: var(--default-red-stat);
+    font-size: var(--fs-text-t3);
+    word-break: break-word;
+}
+
+/* The shared button is a full-width form control, so the buttons are stacked on
+   narrow screens and sized to their content from the tablet breakpoint on. */
+.actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+
+    @media (min-width: 768px) {
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+    }
+
+    button {
+        @media (min-width: 768px) {
+            width: auto;
+            min-width: 160px;
+        }
+    }
+}
+
+.inlineLoader {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.progressBlock {
+    max-width: 620px;
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    box-shadow: var(--default-cards-box-shadow);
+}
+
+.progressText {
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t3);
+}
+
+.progress {
+    height: 6px;
+    margin-top: 10px;
+    border-radius: 3px;
+    background: var(--default-item-divider);
+    overflow: hidden;
+}
+
+.progressBar {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--fills-switch-on-default);
+}
+
+.progress0 {
+    width: 5%;
+}
+
+.progress25 {
+    width: 25%;
+}
+
+.progress50 {
+    width: 50%;
+}
+
+.progress75 {
+    width: 75%;
+}
+
+.progress100 {
+    width: 100%;
+}
+
+.progressHint {
+    margin-top: 8px;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.notesBlock {
+    max-width: 620px;
+    margin-top: 16px;
+}
+
+.notesTitle {
+    margin-bottom: 8px;
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t2);
+    font-weight: var(--weight-medium);
+}
+
+.notes {
+    max-height: 320px;
+    margin: 0;
+    padding: 12px 14px;
+    overflow: auto;
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    box-shadow: var(--default-cards-box-shadow);
+    color: var(--default-main-text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

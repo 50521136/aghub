@@ -22,6 +22,7 @@ import {
     getProtocolName,
     formatLogTimeDetailed,
     formatLogDate,
+    agHubUserFor,
 } from '../../helpers';
 import type { NormalizedQueryLogItem } from 'panel/helpers/helpers';
 import { Service } from '../../types';
@@ -86,6 +87,9 @@ export const DetailModal = (props: Props) => {
         });
     const statusClassName = () => getStatusClassName(props.entry.reason);
     const clientName = () => props.entry.client_info?.name || '';
+    // The AGHub user that owns this identifier, if any.  Shown above the name
+    // because reverse DNS is unreliable and the user is what the admin wants.
+    const agHubUser = () => agHubUserFor(props.entry.client_id);
     const protocol = () => getProtocolName(props.entry.client_proto);
     const responseList = () => formatResponses(props.entry.response);
     const originalResponseList = () => formatResponses(props.entry.originalResponse);
@@ -422,6 +426,18 @@ export const DetailModal = (props: Props) => {
                             >
                                 {intl.getMessage('query_log_detail_address', {
                                     value: props.entry.client,
+                                    span: renderValue,
+                                })}
+                            </div>
+                        </Show>
+                        <Show when={agHubUser()}>
+                            <div
+                                class={rowClassName()}
+                                data-testid="query-log-detail-user"
+                                data-field="user"
+                            >
+                                {intl.getMessage('query_log_detail_user', {
+                                    value: `${agHubUser()} (${props.entry.client_id})`,
                                     span: renderValue,
                                 })}
                             </div>

@@ -16,6 +16,8 @@
 - 'basicAuth': []
 
 'tags':
+- 'name': 'aghub'
+  'description': 'Online update from GitHub releases'
 - 'name': 'blocked_services'
   'description': 'Blocked services controls'
 - 'name': 'clients'
@@ -46,6 +48,8 @@
   'description': 'AdGuard Home statistics'
 - 'name': 'tls'
   'description': 'AdGuard Home HTTPS/DoH/DoQ/DoT settings'
+- 'name': 'users'
+  'description': 'Managed users with query quotas and expiration dates'
 
 'paths':
   '/status':
@@ -1450,6 +1454,295 @@
       - 'mobileconfig'
       - 'global'
 
+  '/users/list':
+    'get':
+      'tags':
+      - 'users'
+      'operationId': 'usersList'
+      'summary': 'Get the managed users and their usage'
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UsersList'
+        '500':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Server error.'
+  '/users/settings':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersSetSettings'
+      'summary': 'Update the user management settings'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UserSettings'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserSettingsResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/users/export':
+    'get':
+      'tags':
+      - 'users'
+      'operationId': 'usersExport'
+      'summary': 'Export the managed users'
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UsersImportRequest'
+        '500':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Server error.'
+  '/users/add':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersAdd'
+      'summary': 'Add a managed user'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UserAddRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/users/update':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersUpdate'
+      'summary': 'Update a managed user'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UserUpdateRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/users/delete':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersDelete'
+      'summary': 'Remove managed users'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UsersUIDsRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/users/reset':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersReset'
+      'summary': 'Reset the request counters of the managed users'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UsersUIDsRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/users/toggle':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersToggle'
+      'summary': 'Enable or disable managed users'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UsersToggleRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/users/import':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersImport'
+      'summary': 'Import managed users, replacing the existing ones'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UsersImportRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+
+  '/users/bulk-add':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersBulkAdd'
+      'summary': 'Create users from a line-based payload'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UserBulkAddRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserBulkAddResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+  '/aghub/update/status':
+    'get':
+      'tags':
+      - 'aghub'
+      'operationId': 'aghubUpdateStatus'
+      'summary': 'Get the current update state'
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UpdateStatusResponse'
+  '/aghub/update/check':
+    'get':
+      'tags':
+      - 'aghub'
+      'operationId': 'aghubUpdateCheck'
+      'summary': 'Check GitHub for a newer release'
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UpdateCheckResponse'
+        '503':
+          'description': 'The online update is not initialized.'
+  '/aghub/update/apply':
+    'post':
+      'tags':
+      - 'aghub'
+      'operationId': 'aghubUpdateApply'
+      'summary': 'Download and install the latest release'
+      'description': >
+        Starts the update in the background.  The process is restarted
+        automatically when the update is installed successfully.
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UpdateStatusResponse'
+        '400':
+          'description': 'The online update is not configured.'
+        '409':
+          'description': 'An update is already in progress.'
+        '503':
+          'description': 'The online update is not initialized.'
 'components':
   'requestBodies':
     'TlsConfig':
@@ -1484,6 +1777,352 @@
             '$ref': '#/components/schemas/RewriteUpdate'
       'required': true
   'schemas':
+    'UpdateAsset':
+      'type': 'object'
+      'description': 'An asset of a GitHub release.'
+      'properties':
+        'name':
+          'type': 'string'
+        'url':
+          'type': 'string'
+        'size':
+          'type': 'integer'
+    'UpdateRelease':
+      'type': 'object'
+      'description': 'A GitHub release.'
+      'properties':
+        'version':
+          'type': 'string'
+        'tag_name':
+          'type': 'string'
+        'name':
+          'type': 'string'
+        'notes':
+          'type': 'string'
+        'url':
+          'type': 'string'
+        'published_at':
+          'type': 'string'
+          'format': 'date-time'
+        'assets':
+          'type': 'array'
+          'items':
+            '$ref': '#/components/schemas/UpdateAsset'
+    'UpdateStatus':
+      'type': 'object'
+      'description': 'The state of an update in progress.'
+      'properties':
+        'started_at':
+          'type': 'string'
+          'format': 'date-time'
+        'version':
+          'type': 'string'
+        'message':
+          'type': 'string'
+        'error':
+          'type': 'string'
+        'progress':
+          'type': 'number'
+        'running':
+          'type': 'boolean'
+        'done':
+          'type': 'boolean'
+    'UpdateCheckResponse':
+      'type': 'object'
+      'description': 'The result of a version check.'
+      'properties':
+        'checked_at':
+          'type': 'string'
+          'format': 'date-time'
+        'current_version':
+          'type': 'string'
+        'repo':
+          'type': 'string'
+        'error':
+          'type': 'string'
+        'has_update':
+          'type': 'boolean'
+        'can_update':
+          'type': 'boolean'
+        'latest':
+          '$ref': '#/components/schemas/UpdateRelease'
+    'UpdateStatusResponse':
+      'type': 'object'
+      'description': 'The current update state.'
+      'properties':
+        'current_version':
+          'type': 'string'
+        'repository':
+          'type': 'string'
+        'enabled':
+          'type': 'boolean'
+        'status':
+          '$ref': '#/components/schemas/UpdateStatus'
+    'User':
+      'type': 'object'
+      'description': 'A managed user with a query quota'
+      'properties':
+        'uid':
+          'type': 'string'
+          'description': 'Unique identifier of the user.'
+        'name':
+          'type': 'string'
+          'description': 'Human-readable name of the user.'
+        'remark':
+          'type': 'string'
+          'description': 'Optional free-form note.'
+        'ids':
+          'type': 'array'
+          'items':
+            'type': 'string'
+          'description': 'IP addresses, CIDR networks, or ClientIDs.'
+        'request_limit':
+          'type': 'integer'
+          'description': 'Request quota per period.  -1 means unlimited.'
+        'period':
+          'type': 'string'
+          'enum':
+          - 'day'
+          - 'month'
+          - 'total'
+          'description': 'Quota accounting period.'
+        'expires_at':
+          'type': 'integer'
+          'description': 'Unix timestamp of the expiration date.  0 means never.'
+        'created_at':
+          'type': 'integer'
+          'description': 'Unix timestamp of the creation.'
+        'enabled':
+          'type': 'boolean'
+          'description': 'Administrator-controlled switch.'
+        'requests':
+          'type': 'integer'
+          'description': 'Requests in the current period.'
+        'total_requests':
+          'type': 'integer'
+          'description': 'Requests since creation.'
+        'period_start':
+          'type': 'integer'
+          'description': 'Unix timestamp of the start of the current period.'
+        'last_seen':
+          'type': 'integer'
+          'description': 'Unix timestamp of the last allowed request.'
+        'status':
+          'type': 'string'
+          'enum':
+          - 'active'
+          - 'disabled'
+          - 'expired'
+          - 'over_quota'
+          - 'expiring_soon'
+          'description': 'Computed status of the user.'
+        'disabled_reason':
+          'type': 'string'
+          'enum':
+          - ''
+          - 'manual'
+          - 'quota'
+          - 'expired'
+          'description': 'Reason the user is not allowed to query.'
+        'remaining_seconds':
+          'type': 'integer'
+          'description': 'Seconds until the expiration date.  -1 means never.'
+        'remaining_requests':
+          'type': 'integer'
+          'description': 'Requests left in the current period.  -1 means unlimited.'
+        'next_reset':
+          'type': 'integer'
+          'description': 'Unix timestamp at which the current period ends and the counter resets.  0 means never.'
+    'UsersSummary':
+      'type': 'object'
+      'description': 'Aggregate state of the managed users'
+      'properties':
+        'total':
+          'type': 'integer'
+        'active':
+          'type': 'integer'
+        'disabled':
+          'type': 'integer'
+        'expired':
+          'type': 'integer'
+        'over_quota':
+          'type': 'integer'
+        'expiring_soon':
+          'type': 'integer'
+        'requests':
+          'type': 'integer'
+        'total_requests':
+          'type': 'integer'
+    'UsersList':
+      'type': 'object'
+      'description': 'The managed users and the aggregate state'
+      'properties':
+        'users':
+          'type': 'array'
+          'items':
+            '$ref': '#/components/schemas/User'
+        'summary':
+          '$ref': '#/components/schemas/UsersSummary'
+        'settings':
+          '$ref': '#/components/schemas/UserSettings'
+        'domain':
+          'type': 'string'
+          'description': 'Domain of the DoT/DoH endpoint, empty when none is configured.  The host name of a client is its identifier joined to this domain with a dot.'
+    'UserAddRequest':
+      'type': 'object'
+      'description': 'User creation request'
+      'required':
+      - 'name'
+      - 'ids'
+      'properties':
+        'name':
+          'type': 'string'
+        'remark':
+          'type': 'string'
+        'ids':
+          'type': 'array'
+          'items':
+            'type': 'string'
+        'request_limit':
+          'type': 'integer'
+          'description': 'Request quota per period.  Omitted or negative means unlimited.'
+        'period':
+          'type': 'string'
+          'enum':
+          - 'day'
+          - 'month'
+          - 'total'
+        'expire_days':
+          'type': 'integer'
+          'description': 'Days until the subscription expires.  0 means never.'
+        'enabled':
+          'type': 'boolean'
+    'UserUpdateRequest':
+      'type': 'object'
+      'description': 'User update request'
+      'required':
+      - 'uid'
+      'properties':
+        'uid':
+          'type': 'string'
+        'name':
+          'type': 'string'
+        'remark':
+          'type': 'string'
+        'ids':
+          'type': 'array'
+          'items':
+            'type': 'string'
+        'request_limit':
+          'type': 'integer'
+        'period':
+          'type': 'string'
+          'enum':
+          - 'day'
+          - 'month'
+          - 'total'
+        'expire_days':
+          'type': 'integer'
+        'extend_days':
+          'type': 'integer'
+        'enabled':
+          'type': 'boolean'
+    'UsersUIDsRequest':
+      'type': 'object'
+      'description': 'Request affecting a set of users'
+      'required':
+      - 'uids'
+      'properties':
+        'uids':
+          'type': 'array'
+          'items':
+            'type': 'string'
+    'UsersToggleRequest':
+      'type': 'object'
+      'description': 'Request to enable or disable a set of users'
+      'required':
+      - 'uids'
+      - 'enabled'
+      'properties':
+        'uids':
+          'type': 'array'
+          'items':
+            'type': 'string'
+        'enabled':
+          'type': 'boolean'
+    'UsersImportRequest':
+      'type': 'object'
+      'description': 'User import request'
+      'required':
+      - 'users'
+      'properties':
+        'users':
+          'type': 'array'
+          'items':
+            '$ref': '#/components/schemas/User'
+        'replace':
+          'type': 'boolean'
+          'description': 'Must be true; the existing users are removed.'
+    'UserSettings':
+      'type': 'object'
+      'description': 'The user management settings'
+      'properties':
+        'deny_unmatched':
+          'type': 'boolean'
+          'description': 'Refuse clients that belong to no user instead of letting them through unaccounted.'
+    'UserSettingsResponse':
+      'type': 'object'
+      'description': 'The user management settings'
+      'properties':
+        'settings':
+          '$ref': '#/components/schemas/UserSettings'
+    'UserBulkAddRequest':
+      'type': 'object'
+      'description': 'Bulk user creation request'
+      'required':
+      - 'text'
+      'properties':
+        'text':
+          'type': 'string'
+          'description': 'One entry per line: identifier[,name[,limit[,period[,expire days]]]].  Blank lines and lines starting with # are ignored.'
+        'enabled':
+          'type': 'boolean'
+    'UserBulkError':
+      'type': 'object'
+      'description': 'A problem with one line of a bulk payload'
+      'properties':
+        'line':
+          'type': 'integer'
+        'text':
+          'type': 'string'
+        'message':
+          'type': 'string'
+    'UserBulkAddResponse':
+      'type': 'object'
+      'description': 'The result of a bulk user creation'
+      'properties':
+        'users':
+          'type': 'array'
+          'items':
+            '$ref': '#/components/schemas/User'
+        'errors':
+          'type': 'array'
+          'items':
+            '$ref': '#/components/schemas/UserBulkError'
+        'skipped':
+          'type': 'integer'
+    'UserActionResponse':
+      'type': 'object'
+      'description': 'The result of a user management operation'
+      'properties':
+        'ok':
+          'type': 'boolean'
+        'message':
+          'type': 'string'
+        'updated':
+          'type': 'integer'
+        'user':
+          '$ref': '#/components/schemas/User'
     'FilteringReason':
       'type': 'string'
       'description': 'Request filtering status.'

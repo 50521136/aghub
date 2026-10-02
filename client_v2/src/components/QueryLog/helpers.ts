@@ -18,6 +18,25 @@ import {
     type Filter,
 } from 'panel/helpers/helpers';
 import { ResponseEntry, WhoisInfo } from './types';
+import { usersState } from 'panel/stores/users';
+
+/**
+ * agHubUserFor returns the name of the AGHub user that owns a client
+ * identifier, or an empty string when no user claims it.
+ *
+ * A DoT or DoH request carries its identifier in the SNI, and AdGuard Home
+ * keeps it on the log entry as client_id.  The client's own name, on the other
+ * hand, comes from reverse DNS, which for a home or mobile connection is often
+ * junk — a carrier IP whose PTR record says "localhost" — so the user name is
+ * the only trustworthy answer to "who asked for this?".
+ */
+export const agHubUserFor = (clientID?: string): string => {
+    if (!clientID) {
+        return '';
+    }
+
+    return usersState.users.find((user) => user.ids?.includes(clientID))?.name ?? '';
+};
 
 const parseLogDate = (time: string): Date | null => {
     const parsedTime = new Date(time);

@@ -13,6 +13,7 @@ import {
     getAdditionalLogs,
 } from 'panel/stores/queryLogs';
 import { accessState, getAccessList, toggleClientBlock } from 'panel/stores/access';
+import { getUsers } from 'panel/stores/users';
 import { dashboardState, getClients } from 'panel/stores/dashboard';
 import {
     filteringState,
@@ -79,6 +80,8 @@ export const QueryLog = () => {
         getFilteringStatus();
         getAllBlockedServices();
         getRewritesList();
+        // Needed to name the AGHub user behind a client identifier.
+        getUsers();
     });
 
     // Watch location.search for filter changes

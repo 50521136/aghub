@@ -1,0 +1,165 @@
+.dialog {
+    /* Wide enough for the two 200px footer buttons of the shared dialog footer
+       to fit inside the same 32px inset as the fields. */
+    width: 480px;
+    max-width: calc(100vw - 32px);
+}
+
+/* The shared footer sets no justify-content, so the buttons sit at the start
+   edge.  Right-aligning them lines the last button up with the right edge of
+   the fields above. */
+.footer {
+    justify-content: flex-end;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* The shared dialog body carries no horizontal padding of its own, while the
+       header and the footer each add 16px.  Padding the form keeps the fields on
+       the same left/right edge as the title and the buttons at every width. */
+    padding: 0 16px;
+}
+
+/* Every field is a label, its control and an optional hint, spaced the same way
+   throughout so that the dialog reads as one tight column. */
+.textField {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* The shared Input is 40px tall at its small size, which is oversized for a
+   form this dense.  Three classes are needed to outrank the theme's
+   `.inputWrapper.small` pair, hence the `.form` in front. */
+.form .textField .inputSmall {
+    height: 34px;
+    font-size: 14px;
+}
+
+/* The number fields sit in the same full-width column as the rest of the form on
+   phones and stop growing on wider screens, where a 160px box is plenty. */
+.fieldNumber {
+    max-width: none;
+
+    @media (min-width: 768px) {
+        max-width: 160px;
+    }
+}
+
+/* Two fields side by side, aligned on the bottom edge of their controls.  The
+   basis is small enough that the pair still fits one line on a 360px screen
+   once the form padding is taken off. */
+.row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.row > * {
+    flex: 1 1 130px;
+    min-width: 0;
+}
+
+/* The label of a field that carries an action on the right, like the
+   identifier field with its generator. */
+.fieldHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.fieldLabel {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}
+
+.randomButton {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--pressed-link);
+    font-family: inherit;
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    cursor: pointer;
+
+    &:hover {
+        text-decoration: underline;
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--default-active-input-stroke);
+        outline-offset: 2px;
+    }
+}
+
+.textarea {
+    width: 100%;
+    box-sizing: border-box;
+    /* One line by default, because a client normally has a single identifier;
+       it scrolls and can be grown when there are several. */
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 8px;
+    background: var(--default-page-background);
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.45;
+    /* No resize handle on touch screens: it is a 16px target sitting under the
+       thumb and the dialog body already scrolls. */
+    resize: none;
+
+    @media (min-width: 768px) {
+        resize: vertical;
+    }
+
+    &:focus {
+        outline: none;
+        border-color: var(--pressed-link);
+    }
+}
+
+.select {
+    height: 34px;
+    min-width: 110px;
+    padding: 0 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 8px;
+    background: var(--default-page-background);
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: 14px;
+
+    &:focus {
+        outline: none;
+        border-color: var(--pressed-link);
+    }
+
+    /* Mirrors the shared Input's disabled look, so a disabled select reads as
+       disabled instead of looking like any other dropdown. */
+    &:disabled {
+        background: var(--pressed-page-background);
+        color: var(--default-description-text);
+        cursor: default;
+    }
+}
+
+.hint {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.error {
+    color: var(--default-error-link);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}

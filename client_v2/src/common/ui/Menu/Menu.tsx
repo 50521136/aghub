@@ -60,6 +60,19 @@ export const Menu = (props: Props) => {
                         </span>
                     </Link>
                 </div>
+                <div class={s.menuLinkWrapper}>
+                    <Link
+                        class={cn(s.menuLink, {
+                            [s.activeLink]: isActive(Paths.Users),
+                        })}
+                        to={RoutePath.Users}
+                    >
+                        <Icon class={s.linkIcon} icon="user" />
+                        <span class={theme.common.textOverflow}>
+                            {intl.getMessage('users_title')}
+                        </span>
+                    </Link>
+                </div>
                 <AccordionSection
                     title={intl.getMessage('settings')}
                     icon="settings"
@@ -81,6 +94,11 @@ export const Menu = (props: Props) => {
                             routePath: RoutePath.Clients,
                         },
                         { label: 'DHCP', path: Paths.Dhcp, routePath: RoutePath.Dhcp },
+                        {
+                            label: intl.getMessage('update_title'),
+                            path: Paths.Update,
+                            routePath: RoutePath.Update,
+                        },
                     ]}
                     isActive={isActive}
                 />

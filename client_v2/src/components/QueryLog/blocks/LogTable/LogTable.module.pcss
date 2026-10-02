@@ -271,6 +271,21 @@
     color: var(--default-description-text);
 }
 
+/* The AGHub user that owns the identifier.  It has to read as a label rather
+   than as one more address, so it gets a chip background and semibold text. */
+.clientUser {
+    flex-shrink: 0;
+    max-width: 11em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background-color: var(--default-stats-background);
+    color: var(--default-main-text);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .clientLocationDivider {
     width: 1px;
     height: 12px;

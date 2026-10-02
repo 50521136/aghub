@@ -1,0 +1,676 @@
+/* The page body is padded to line up with the shared page title, which already
+   carries a 16px horizontal padding of its own. */
+.body {
+    padding: 0 16px;
+}
+
+.desc {
+    max-width: 620px;
+    margin: 8px 0 0;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t2);
+    line-height: var(--lh-t2-normal);
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+
+    @media (min-width: 768px) {
+        grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+        gap: 8px;
+        margin-top: 16px;
+    }
+}
+
+/* Seven counters in a four-column grid leave one slot over, so the widest
+   label takes two columns and both rows come out exactly full.  It has to be
+   the last one: "本周期请求数" needs 72px and a single column only gives 69px,
+   which truncated it, while "用户总数" fits in one. */
+.statCardWide {
+    grid-column: span 2;
+
+    @media (min-width: 768px) {
+        grid-column: auto;
+    }
+}
+
+.statCard {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    box-shadow: var(--default-cards-box-shadow);
+
+    @media (min-width: 768px) {
+        padding: 10px 12px;
+    }
+}
+
+.statValue {
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t2);
+    line-height: var(--lh-t2-normal);
+    font-weight: var(--weight-semi-bold);
+    font-variant-numeric: tabular-nums;
+
+    @media (min-width: 768px) {
+        font-size: var(--fs-title-h5);
+        line-height: var(--lh-h5-normal);
+    }
+}
+
+.statOk {
+    color: var(--fills-switch-on-default);
+}
+
+.statWarn {
+    color: var(--default-warning-button);
+}
+
+.statErr {
+    color: var(--default-red-stat);
+}
+
+.statLabel {
+    overflow: hidden;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+
+    @media (max-width: 767px) {
+        /* The search field and the actions share the first line and the filters
+           take the second one, so the toolbar costs two rows instead of three.
+           The order has to be set because the filters come second in the DOM. */
+        .search {
+            order: 1;
+        }
+
+        .toolbarActions {
+            order: 2;
+        }
+
+        .chips {
+            order: 3;
+        }
+    }
+
+    @media (min-width: 768px) {
+        margin-top: 16px;
+    }
+}
+
+.search {
+    /* A zero basis lets the field shrink to whatever the action buttons leave
+       on the first toolbar line; with an automatic basis its content width
+       pushes them onto a line of their own. */
+    flex: 1 1 0;
+    min-width: 80px;
+    max-width: none;
+
+    @media (min-width: 768px) {
+        flex: 1 1 200px;
+        max-width: 300px;
+    }
+}
+
+.chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+    /* One scrollable row instead of three wrapped ones, which is most of what
+       the filters cost on a phone. */
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+
+    @media (min-width: 768px) {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 14px;
+    background: none;
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: var(--fs-text-t3);
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition:
+        var(--t2) background-color,
+        var(--t2) color,
+        var(--t2) border-color;
+
+    &:hover {
+        background: var(--hovered-page-background);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--default-active-input-stroke);
+        outline-offset: 1px;
+    }
+}
+
+.chipActive {
+    border-color: transparent;
+    background: var(--default-main-button);
+    color: var(--gray-0);
+
+    &:hover {
+        background: var(--default-main-button);
+    }
+}
+
+.chipCount {
+    font-size: var(--fs-text-t4);
+    opacity: 0.65;
+}
+
+.toolbarActions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 0;
+
+    @media (min-width: 768px) {
+        gap: 16px;
+        margin-left: auto;
+    }
+}
+
+/* Secondary toolbar action, sized to sit next to the PlusButton without
+   outranking it. */
+.importButton {
+    /* Matched to the PlusButton it sits next to. */
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: var(--fs-text-t3);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--t2) background-color;
+
+    &:hover:not(:disabled) {
+        background: var(--hovered-page-background);
+    }
+
+    &:disabled {
+        color: var(--default-description-text);
+        cursor: default;
+        opacity: 0.5;
+    }
+
+    @media (min-width: 768px) {
+        height: 36px;
+        padding: 0 14px;
+    }
+}
+
+.bulkBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--page-background-additional);
+}
+
+.bulkText {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+}
+
+.bulkActions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.bulkButton {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 6px;
+    background: var(--default-cards-background);
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: var(--fs-text-t3);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--t2) background-color;
+
+    &:hover:not(:disabled) {
+        background: var(--hovered-page-background);
+    }
+
+    &:disabled {
+        color: var(--default-description-text);
+        cursor: default;
+        opacity: 0.5;
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--default-active-input-stroke);
+        outline-offset: 1px;
+    }
+}
+
+.bulkButtonDanger {
+    border-color: var(--default-error-link);
+    color: var(--default-error-link);
+}
+
+.tableSection {
+    margin-top: 12px;
+    padding-bottom: 24px;
+}
+
+/* The shared card carries 8px of vertical padding and puts 16px between the
+   cards, which is a lot of air for a list that should show several users per
+   screen on a phone.  Two classes are needed to outrank the shared styles. */
+.tableSection .cardRow {
+    padding: 4px 10px;
+}
+
+.tableSection .cardRow > * > * {
+    padding: 2px 0;
+}
+
+.tableSection .tableRows {
+    @media (max-width: 767px) {
+        gap: 6px;
+    }
+}
+
+@media (max-width: 767px) {
+    /* Every value in a card resolves the shared type token, and the 24px line
+       height of the 16px size is what actually makes the rows tall: a cell is
+       one line plus a few pixels of padding.  Re-scoping the tokens on the card
+       shrinks all of them at once, without fighting the shared classes. */
+    .tableSection .cardRow {
+        --fs-text-t2: 14px;
+        --lh-t2-normal: 18px;
+    }
+
+    /* The shared table never sets a size on a cell's value or label, so both
+       inherit the page's 16px — too big for a list that has to fit several
+       users on a phone, and it is the value that decides how wide the name can
+       be.  The label is a caption rather than content, so it goes smaller than
+       the value and turns grey, which also hands the value ~20px more room. */
+    .tableSection .cardRow > * > * {
+        font-size: 14px;
+        line-height: 18px;
+    }
+
+    .tableSection .cellLabel {
+        color: var(--default-description-text);
+        font-size: 12px;
+        line-height: 16px;
+    }
+
+    /* The card is narrow enough that a name and an identifier can fill it with
+       nothing left for the gaps, and then the name is squeezed by a pixel or
+       two and the ellipsis eats its last character.  Two classes outrank the
+       base rules above, so the order here does not matter. */
+    .tableSection .nameBox,
+    .tableSection .nameLine {
+        gap: 4px;
+    }
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t2);
+}
+
+.emptyIcon {
+    width: 40px;
+    height: 40px;
+    color: var(--default-gray-icons);
+}
+
+.selectCell {
+    display: flex;
+    align-items: center;
+}
+
+.selectCellOuter {
+    min-width: 0;
+}
+
+.nameBox {
+    display: flex;
+    min-width: 0;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 6px;
+}
+
+/* The name, the note and the identifiers always share one line — on a table row
+   and on a card alike — and only the note gives up space when there is not
+   enough of it. */
+.nameLine {
+    display: flex;
+    min-width: 0;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.nameText {
+    /* The note gives up its space first — see its shrink factor below — so the
+       name keeps its natural width.  Capping the name as well only truncated
+       ordinary ones: a six-character name lost its last character on every
+       phone width.  The identifier cannot be squeezed either, because its
+       wrapper is `flex: 0 0 auto`, so the note is the only thing that shrinks. */
+    flex: 0 1 auto;
+    flex-shrink: 1;
+    overflow: hidden;
+    color: var(--default-main-text);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.remarkText {
+    /* A much larger shrink factor than the name's, so that flexbox takes the
+       space from the note first instead of from both in proportion.  It has to
+       be extreme: at 200 the name still gave up a fraction of a pixel, which
+       was enough for the browser to draw an ellipsis over its last character. */
+    flex: 0 1 auto;
+    flex-shrink: 10000;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* The tooltip wraps its trigger in a box of its own, and that box is the flex
+   item, so the class has to go on the tooltip.  The identifier is never
+   shortened: it is the host name the client has to use. */
+.idsWrap {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.idsButton {
+    overflow: hidden;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: inherit;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: pointer;
+
+    &:focus-visible {
+        outline: 2px solid var(--default-active-input-stroke);
+        outline-offset: 2px;
+    }
+}
+
+.idsTooltipOverlay {
+    max-width: 260px;
+}
+
+.idsTooltip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 240px;
+    overflow-y: auto;
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+    overflow-wrap: anywhere;
+}
+
+.idsTooltipHint {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--default-item-divider);
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.usageBox {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+}
+
+/* The numbers and the bar share a line, so only the reset moment needs one of
+   its own. */
+.usageLine {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* The remaining time and the status badge sit next to each other in the column
+   they share. */
+.remainingBox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.usageText {
+    flex: 0 0 auto;
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* The counter is cleared at a fixed midnight boundary, so the moment it happens
+   is shown under the numbers.  It is secondary information, hence the small
+   blue type.  The palette has no semantic blue token, so the tertiary scale is
+   used and the shade is picked per theme to stay readable. */
+.resetText {
+    color: var(--product-tertiary-70);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    white-space: nowrap;
+}
+
+:global([data-theme='dark']) .resetText {
+    color: var(--product-tertiary-40);
+}
+
+.progress {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 24px;
+    max-width: 110px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--default-item-divider);
+    overflow: hidden;
+
+    /* The numbers already say how much is left.  On a phone the bar only takes
+       width away from the name and the identifier. */
+    @media (max-width: 767px) {
+        display: none;
+    }
+}
+
+.progressBar {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--fills-switch-on-default);
+}
+
+.progress0 {
+    width: 5%;
+}
+
+.progress25 {
+    width: 25%;
+}
+
+.progress50 {
+    width: 50%;
+}
+
+.progress75 {
+    width: 75%;
+    background: var(--default-warning-button);
+}
+
+.progress100 {
+    width: 100%;
+    background: var(--default-red-stat);
+}
+
+.textWarn {
+    color: var(--default-warning-button);
+}
+
+.textErr {
+    color: var(--default-red-stat);
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    background: var(--page-background-additional);
+    color: var(--default-description-text);
+}
+
+.badgeActive {
+    background: var(--fills-switch-on-default);
+    color: var(--default-primary-button-text);
+}
+
+.badgeWarn {
+    background: var(--default-warning-button);
+    color: var(--default-primary-button-text);
+}
+
+.badgeErr {
+    background: var(--default-red-stat);
+    color: var(--default-primary-button-text);
+}
+
+.badgeMuted {
+    background: var(--default-item-divider);
+    color: var(--default-description-text);
+}
+
+.actionsCell {
+    min-width: 0;
+}
+
+.actionsHeader {
+    width: 100%;
+    text-align: right;
+}
+
+/* The shared action container stacks its buttons on a phone, which costs a
+   whole card's worth of height for four actions.  This one keeps them on a
+   single wrapping line, so the row reads as one toolbar. */
+.actions {
+    display: flex;
+    align-items: center;
+    /* The four actions measure 268px together, so the gap has to stay at 10px
+       for them to share one line inside a 360px card. */
+    gap: 4px 10px;
+    flex-wrap: wrap;
+    width: 100%;
+
+    @media (min-width: 768px) {
+        width: auto;
+        gap: 8px;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+    }
+}
+
+/* Very narrow phones — iPhone SE and older Androids.  At the card's normal label
+   size the four actions come to 268px, which no longer fits beside their gaps
+   inside a 320px card, so both come down a notch.  This has to live after
+   `.actions` above, or the base rule's gap wins on source order. */
+@media (max-width: 359px) {
+    .tableSection .cardRow {
+        --fs-text-t2: 12px;
+    }
+
+    .actions {
+        gap: 4px 6px;
+    }
+
+    /* Four columns leave 69px of label space, which "3 天内到期" overflows.
+       The base `.stats` rule is above, so this wins on source order. */
+    .stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    /* Three rows of tiles instead of two, so each one is made shorter to keep
+       the cost down. */
+    .statCard {
+        padding: 4px 6px;
+    }
+}
