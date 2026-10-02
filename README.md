@@ -1,3 +1,10 @@
+> [!IMPORTANT]
+> **这是 [AGHub](AGHUB.md) —— 内置用户用量管理的 AdGuard Home fork。**
+> 在 AdGuard Home 原有功能之上，进程内部多了用户配额与有效期管理：标识（IP / CIDR /
+> DoH·DoT ClientID）、请求配额、统计周期、到期自动拒绝，拦截发生在 DNS 请求处理路径上。
+> 还内置了从 GitHub Releases 原地升级的在线更新。
+> **中文说明见 [AGHUB.md](AGHUB.md)。** 以下是上游 AdGuard Home 的原始说明。
+
 &nbsp;
 <p align="center">
   <picture>
