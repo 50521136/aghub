@@ -843,6 +843,7 @@
   "update_install": "Update now",
   "update_latest": "You are running the latest version",
   "update_latest_version": "Latest version",
+  "update_not_checked": "Not checked yet",
   "update_not_configured": "The update repository is not configured in this build. Set AGHUB_UPDATE_REPO or build with the release flags to enable online updates.",
   "update_published": "Published",
   "update_release_notes": "Release notes",

@@ -80,8 +80,12 @@ export const getUpdateState = async () => {
     }
 };
 
-/** checkForUpdate queries GitHub for a newer release. */
-export const checkForUpdate = async () => {
+/**
+ * checkForUpdate queries GitHub for a newer release.  Pass silent to suppress
+ * the "already up to date" toast, which is noise when the page checks on its
+ * own as soon as it opens.
+ */
+export const checkForUpdate = async (silent = false) => {
     setState('checking', true);
 
     try {
@@ -94,7 +98,7 @@ export const checkForUpdate = async () => {
             return;
         }
 
-        if (!data.has_update) {
+        if (!data.has_update && !silent) {
             addSuccessToast(intl.getMessage('update_latest'));
         }
     } catch (error) {

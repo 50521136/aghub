@@ -47,6 +47,9 @@ const progressClass = (value: number) => {
 export const Update = () => {
     onMount(() => {
         getUpdateState();
+        // Fill the latest-version card in by itself, so the page does not look
+        // broken until someone presses the button.
+        checkForUpdate(true);
     });
 
     const latest = createMemo(() => updateState.check?.latest);
@@ -96,7 +99,10 @@ export const Update = () => {
                                 <div class={s.cardLabel}>
                                     {intl.getMessage('update_latest_version')}
                                 </div>
-                                <div class={s.cardValue}>{latest()?.version || '—'}</div>
+                                <div class={s.cardValue}>
+                                    {latest()?.version ||
+                                        intl.getMessage('update_not_checked')}
+                                </div>
                                 <Show when={latest()?.published_at}>
                                     <div class={s.cardHint}>
                                         {intl.getMessage('update_published')}:{' '}
@@ -125,7 +131,7 @@ export const Update = () => {
                                 size="small"
                                 variant="secondary"
                                 disabled={busy() || !updateState.enabled}
-                                onClick={checkForUpdate}
+                                onClick={() => checkForUpdate()}
                                 data-testid="update-check"
                             >
                                 {intl.getMessage('update_check')}
