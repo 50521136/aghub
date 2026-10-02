@@ -24,11 +24,28 @@
 #	PLATFORMS  optional, a space-separated "os/arch" list to build
 #	SKIP_JS    optional, set to "1" to reuse the existing frontend build
 
-set -e -o 'pipefail' -f -u
+set -e -f -u
+
+# pipefail is not in POSIX, and dash — the /bin/sh of Debian and Ubuntu — aborts
+# the whole script with "Illegal option -o pipefail", which is what broke the
+# GitHub runner.  Set it only where it exists.
+if (set -o pipefail) 2>/dev/null; then
+	# shellcheck disable=SC3040
+	set -o pipefail
+fi
 
 version="${VERSION:?please set VERSION}"
 repo="${REPO:?please set REPO}"
 dist="${DIST_DIR:-dist-aghub}"
+
+# The output directory is used as a path relative to the repository root.  An
+# absolute DIST_DIR would therefore be read as "./tmp/whatever" and quietly
+# create a "tmp" directory inside the repo, so resolve it once, here.
+case "$dist" in
+/*) dist_dir="$dist" ;;
+*) dist_dir="./${dist}" ;;
+esac
+readonly dist_dir
 
 # The asset name uses the version without the leading "v".
 plain_version="${version#v}"
@@ -59,8 +76,8 @@ fi
 committime="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 readonly committime
 
-rm -rf "./${dist}"
-mkdir -p "./${dist}"
+rm -rf "$dist_dir"
+mkdir -p "$dist_dir"
 
 # pack builds the binary of a single platform and packs it into an archive.
 pack() {
@@ -69,7 +86,7 @@ pack() {
 	pack_arm="$3"
 
 	pack_name="aghub_${plain_version}_${pack_os}_${pack_arch}"
-	pack_dir="./${dist}/${pack_name}"
+	pack_dir="$dist_dir/${pack_name}"
 
 	mkdir -p "$pack_dir"
 
@@ -138,7 +155,7 @@ pack() {
 		# The binary must come first, so that the fallback lookup of the
 		# updater finds it even if the binary has been renamed.
 		tar -C "$pack_dir" -c -f - "./${pack_bin}" './aghub.service' './LICENSE.txt' \
-			| gzip -9 - >"./${dist}/${pack_name}.tar.gz"
+			| gzip -9 - >"$dist_dir/${pack_name}.tar.gz"
 		;;
 	esac
 
@@ -163,20 +180,20 @@ printf 'calculating checksums\n' 1>&2
 
 # Note that globbing is disabled by set -f, so the archives are looked up with
 # find instead of with a wildcard pattern.
-: >"./${dist}/checksums.txt"
+: >"$dist_dir/checksums.txt"
 
-find "./${dist}" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) \
+find "$dist_dir" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) \
 	| sort \
 	| while read -r f; do
 		sum="$(sha256sum "$f" | cut -d' ' -f1)"
-		printf '%s  %s\n' "$sum" "$(basename "$f")" >>"./${dist}/checksums.txt"
+		printf '%s  %s\n' "$sum" "$(basename "$f")" >>"$dist_dir/checksums.txt"
 	done
 
-if [ ! -s "./${dist}/checksums.txt" ]; then
+if [ ! -s "$dist_dir/checksums.txt" ]; then
 	printf 'error: no archives were produced\n' 1>&2
 
 	exit 1
 fi
 
 printf 'done:\n' 1>&2
-ls -1 "./${dist}" 1>&2
+ls -1 "$dist_dir" 1>&2

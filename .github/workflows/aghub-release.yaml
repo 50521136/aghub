@@ -59,7 +59,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           REPO: ${{ github.repository }}
           SKIP_JS: '1'
-        run: sh ./scripts/aghub-release.sh
+        run: bash ./scripts/aghub-release.sh
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
