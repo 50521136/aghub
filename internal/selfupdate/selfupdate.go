@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -154,9 +155,13 @@ type Updater struct {
 	client *http.Client
 
 	repo  string
-	proxy string
 	token string
 	api   string
+
+	// proxy is the acceleration prefix.  It may be changed at runtime from
+	// the web UI, so it is read through an atomic pointer.  An empty string
+	// means a direct connection.
+	proxy atomic.Pointer[string]
 
 	// execPath is the path of the running executable.
 	execPath string
@@ -199,21 +204,44 @@ func New(cfg *Config) (u *Updater, err error) {
 		proxy = ProxyURL
 	}
 
+	proxy = NormalizeProxy(proxy)
+
 	api := os.Getenv(EnvAPI)
 	if api == "" {
 		api = githubAPI
 	}
 
-	return &Updater{
+	u = &Updater{
 		logger:   cfg.Logger.With("prefix", "selfupdate"),
 		client:   &http.Client{Timeout: downloadTimeout},
 		repo:     repo,
-		proxy:    proxy,
 		token:    os.Getenv(EnvToken),
 		api:      strings.TrimRight(api, "/"),
 		execPath: execPath,
 		status:   &Status{Progress: -1},
-	}, nil
+	}
+
+	u.proxy.Store(&proxy)
+
+	return u, nil
+}
+
+// Proxy returns the acceleration prefix in use, or an empty string when
+// requests go directly to GitHub.
+func (u *Updater) Proxy() (prefix string) {
+	p := u.proxy.Load()
+	if p == nil {
+		return ""
+	}
+
+	return *p
+}
+
+// SetProxy replaces the acceleration prefix.  An empty prefix disables the
+// acceleration.
+func (u *Updater) SetProxy(prefix string) {
+	prefix = NormalizeProxy(prefix)
+	u.proxy.Store(&prefix)
 }
 
 // Repo returns the GitHub repository used for updates.
@@ -370,9 +398,35 @@ func (u *Updater) findChecksums(rel *Release) (asset *Asset) {
 	return nil
 }
 
-// get performs a GET request to the GitHub API, adding the authorization
-// header when a token is configured.
+// get performs a GET request to the GitHub API.  A configured acceleration
+// proxy is tried first, because api.github.com is unreachable from some
+// networks; most proxies serve release downloads only, though, so a direct
+// request is used as a fallback.
 func (u *Updater) get(ctx context.Context, url string) (body io.ReadCloser, err error) {
+	proxy := u.Proxy()
+	if proxy == "" {
+		return u.getDirect(ctx, url)
+	}
+
+	body, perr := u.getDirect(ctx, proxy+"/"+url)
+	if perr == nil {
+		return body, nil
+	}
+
+	body, derr := u.getDirect(ctx, url)
+	if derr != nil {
+		return nil, fmt.Errorf("via proxy: %w; directly: %w", perr, derr)
+	}
+
+	return body, nil
+}
+
+// getDirect performs a GET request to url without acceleration, adding the
+// authorization header when a token is configured.
+func (u *Updater) getDirect(
+	ctx context.Context,
+	url string,
+) (body io.ReadCloser, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -402,11 +456,12 @@ func (u *Updater) get(ctx context.Context, url string) (body io.ReadCloser, err 
 // downloadURL returns the URL to use for downloading an asset, applying the
 // configured proxy prefix.
 func (u *Updater) downloadURL(url string) (out string) {
-	if u.proxy == "" {
+	proxy := u.Proxy()
+	if proxy == "" {
 		return url
 	}
 
-	return strings.TrimRight(u.proxy, "/") + "/" + url
+	return proxy + "/" + url
 }
 
 // Apply downloads the latest release, verifies it, replaces the running

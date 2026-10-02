@@ -52,7 +52,10 @@ func (m *Manager) load() (err error) {
 	}
 
 	if state.Settings != nil {
-		m.settings.Store(&Settings{DenyUnmatched: state.Settings.DenyUnmatched})
+		m.settings.Store(&Settings{
+			DenyUnmatched: state.Settings.DenyUnmatched,
+			UpdateProxy:   state.Settings.UpdateProxy,
+		})
 	}
 
 	for _, u := range state.Users {

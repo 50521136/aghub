@@ -4,9 +4,18 @@ import { untrack } from 'solid-js';
 import {
     aghubUpdateApply,
     aghubUpdateCheck,
+    aghubUpdateProxies,
+    aghubUpdateSetProxy,
     aghubUpdateStatus,
+    aghubUpdateTestProxies,
 } from 'panel/api/generated';
-import type { UpdateCheckResponse, UpdateStatus, UpdateStatusResponse } from 'panel/api/model';
+import type {
+    UpdateCheckResponse,
+    UpdateProxyNode,
+    UpdateProxyTest,
+    UpdateStatus,
+    UpdateStatusResponse,
+} from 'panel/api/model';
 
 import { addErrorToast, addSuccessToast } from './toasts';
 import intl from 'panel/common/intl';
@@ -16,6 +25,12 @@ const pollIntervalMs = 2000;
 
 /** pollTimeoutMs is how long the polling continues before giving up. */
 const pollTimeoutMs = 5 * 60 * 1000;
+
+/**
+ * proxyTestBatchSize is the number of proxies tested per request.  The server
+ * caps it, and smaller batches let the results arrive progressively.
+ */
+const proxyTestBatchSize = 40;
 
 type UpdateState = {
     /** currentVersion is the version of the running application. */
@@ -41,6 +56,27 @@ type UpdateState = {
 
     /** applying is true while the update is in progress. */
     applying: boolean;
+
+    /** proxies is the built-in list of acceleration proxies. */
+    proxies: UpdateProxyNode[];
+
+    /** proxy is the acceleration prefix saved in the settings. */
+    proxy: string;
+
+    /** proxyCurrent is the prefix the updater is using now. */
+    proxyCurrent: string;
+
+    /** testingProxies is true while the acceleration proxies are tested. */
+    testingProxies: boolean;
+
+    /** proxyTestDone is the number of proxies tested so far. */
+    proxyTestDone: number;
+
+    /** proxyTestTotal is the number of proxies being tested. */
+    proxyTestTotal: number;
+
+    /** proxyResults are the results of the last test, if any. */
+    proxyResults: UpdateProxyTest[] | null;
 };
 
 const emptyStatus: UpdateStatus = {
@@ -58,6 +94,13 @@ const initialState: UpdateState = {
     initialized: false,
     checking: false,
     applying: false,
+    proxies: [],
+    proxy: '',
+    proxyCurrent: '',
+    testingProxies: false,
+    proxyTestDone: 0,
+    proxyTestTotal: 0,
+    proxyResults: null,
 };
 
 const [state, setState] = createStore<UpdateState>(initialState);
@@ -78,6 +121,102 @@ export const getUpdateState = async () => {
     } catch (error) {
         addErrorToast({ error });
     }
+};
+
+/** getProxies loads the built-in acceleration proxies and the one in use. */
+export const getProxies = async () => {
+    try {
+        const data = await aghubUpdateProxies();
+        setState({
+            proxies: data.proxies ?? [],
+            proxy: data.stored ?? '',
+            proxyCurrent: data.current ?? '',
+        });
+    } catch (error) {
+        addErrorToast({ error });
+    }
+};
+
+/**
+ * setProxy saves the acceleration prefix.  An empty prefix disables the
+ * acceleration and makes the updater connect to GitHub directly.
+ */
+export const setProxy = async (prefix: string) => {
+    try {
+        const data = await aghubUpdateSetProxy({ proxy: prefix });
+        setState({
+            proxies: data.proxies ?? [],
+            proxy: data.stored ?? '',
+            proxyCurrent: data.current ?? '',
+        });
+
+        addSuccessToast(
+            prefix === ''
+                ? intl.getMessage('update_proxy_off_toast')
+                : intl.getMessage('update_proxy_saved', { host: prefix }),
+        );
+    } catch (error) {
+        addErrorToast({ error });
+    }
+};
+
+/**
+ * testProxies measures every built-in acceleration proxy from this server, in
+ * batches, so that the results arrive as they are produced.
+ */
+export const testProxies = async () => {
+    setState({
+        testingProxies: true,
+        proxyResults: [],
+        proxyTestDone: 0,
+        proxyTestTotal: 0,
+    });
+
+    try {
+        const data = await aghubUpdateProxies();
+        const urls = (data.proxies ?? []).map((p) => p.url);
+        setState('proxyTestTotal', urls.length);
+
+        const results: UpdateProxyTest[] = [];
+
+        // The batches run one after another so that the results, and the
+        // progress, arrive as they are produced.  Running them together does
+        // not help: the run is bound by resolving the host names of the
+        // proxies that no longer exist.
+        for (let i = 0; i < urls.length; i += proxyTestBatchSize) {
+            const batch = urls.slice(i, i + proxyTestBatchSize);
+            const res = await aghubUpdateTestProxies({ proxies: batch });
+
+            results.push(...(res.results ?? []));
+
+            setState({ proxyResults: [...results], proxyTestDone: results.length });
+        }
+    } catch (error) {
+        addErrorToast({ error });
+    } finally {
+        setState('testingProxies', false);
+    }
+};
+
+/**
+ * proxyResultsSorted returns the test results with the usable ones first and
+ * the fastest at the top.
+ */
+export const proxyResultsSorted = (results: UpdateProxyTest[] | null) => {
+    if (!results) {
+        return [];
+    }
+
+    return [...results].sort((a, b) => {
+        const aOk = Number(Boolean(a.api_ok || a.download_ok));
+        const bOk = Number(Boolean(b.api_ok || b.download_ok));
+
+        if (aOk !== bOk) {
+            return bOk - aOk;
+        }
+
+        return (a.latency_ms ?? 0) - (b.latency_ms ?? 0);
+    });
 };
 
 /**

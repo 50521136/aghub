@@ -1,13 +1,27 @@
-import { Show, createMemo, onMount } from 'solid-js';
+import { For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import cn from 'clsx';
 
 import intl from 'panel/common/intl';
 import theme from 'panel/lib/theme';
 import { Button } from 'panel/common/ui/Button';
 import { Loader } from 'panel/common/ui/Loader';
-import { applyUpdate, checkForUpdate, getUpdateState, updateState } from 'panel/stores/update';
+import { Input } from 'panel/common/controls/Input';
+import {
+    applyUpdate,
+    checkForUpdate,
+    getProxies,
+    getUpdateState,
+    proxyResultsSorted,
+    setProxy,
+    testProxies,
+    updateState,
+} from 'panel/stores/update';
 
 import s from './Update.module.pcss';
+
+/** visibleResults is the number of test results shown before the list is
+ * expanded. */
+const visibleResults = 12;
 
 /** formatDate formats an ISO date string for the current locale. */
 const formatDate = (value?: string) => {
@@ -45,12 +59,41 @@ const progressClass = (value: number) => {
 };
 
 export const Update = () => {
+    const [proxyInput, setProxyInput] = createSignal('');
+    const [showAll, setShowAll] = createSignal(false);
+
     onMount(() => {
         getUpdateState();
+        getProxies();
         // Fill the latest-version card in by itself, so the page does not look
         // broken until someone presses the button.
         checkForUpdate(true);
     });
+
+    // The input follows the saved value until the user edits it.
+    const [edited, setEdited] = createSignal(false);
+
+    const proxyValue = createMemo(() => {
+        if (!edited()) {
+            return updateState.proxy;
+        }
+
+        return proxyInput();
+    });
+
+    const results = createMemo(() => proxyResultsSorted(updateState.proxyResults));
+
+    const shownResults = createMemo(() => {
+        if (showAll()) {
+            return results();
+        }
+
+        return results().slice(0, visibleResults);
+    });
+
+    const usableCount = createMemo(
+        () => results().filter((r) => r.api_ok || r.download_ok).length,
+    );
 
     const latest = createMemo(() => updateState.check?.latest);
 
@@ -181,6 +224,167 @@ export const Update = () => {
                                 <pre class={s.notes}>{latest()?.notes}</pre>
                             </div>
                         </Show>
+
+                        <div class={s.proxyBlock} data-testid="update-proxy">
+                            <div class={s.notesTitle}>
+                                {intl.getMessage('update_proxy_title')}
+                            </div>
+                            <p class={s.proxyDesc}>
+                                {intl.getMessage('update_proxy_desc')}
+                            </p>
+
+                            <div class={s.proxyRow}>
+                                <Input
+                                    size="small"
+                                    class={s.proxyInput}
+                                    value={proxyValue()}
+                                    placeholder="https://gh-proxy.com"
+                                    onChange={(e) => {
+                                        setEdited(true);
+                                        setProxyInput(e.currentTarget.value);
+                                    }}
+                                    data-testid="update-proxy-input"
+                                />
+
+                                <Button
+                                    size="small"
+                                    variant="secondary"
+                                    onClick={() => {
+                                        setEdited(false);
+                                        setProxy('');
+                                    }}
+                                    data-testid="update-proxy-off"
+                                >
+                                    {intl.getMessage('update_proxy_direct')}
+                                </Button>
+
+                                <Button
+                                    size="small"
+                                    variant="primary"
+                                    disabled={updateState.testingProxies}
+                                    onClick={() => {
+                                        setShowAll(false);
+                                        testProxies();
+                                    }}
+                                    data-testid="update-proxy-test"
+                                >
+                                    {intl.getMessage('update_proxy_test')}
+                                </Button>
+
+                                <Button
+                                    size="small"
+                                    variant="secondary"
+                                    onClick={() => {
+                                        setEdited(false);
+                                        setProxy(proxyValue());
+                                    }}
+                                    data-testid="update-proxy-save"
+                                >
+                                    {intl.getMessage('update_proxy_save')}
+                                </Button>
+                            </div>
+
+                            <div class={s.proxyStatus}>
+                                {updateState.proxyCurrent
+                                    ? intl.getMessage('update_proxy_in_use', {
+                                          host: updateState.proxyCurrent,
+                                      })
+                                    : intl.getMessage('update_proxy_direct_in_use')}
+                            </div>
+
+                            <Show when={updateState.testingProxies}>
+                                <div class={s.proxyProgress}>
+                                    {intl.getMessage('update_proxy_testing', {
+                                        done: updateState.proxyTestDone,
+                                        total: updateState.proxyTestTotal,
+                                    })}
+                                </div>
+                            </Show>
+
+                            <Show when={!updateState.testingProxies && results().length > 0}>
+                                <div class={s.proxySummary}>
+                                    {intl.getMessage('update_proxy_summary', {
+                                        usable: usableCount(),
+                                        total: results().length,
+                                    })}
+                                </div>
+                            </Show>
+
+                            <Show when={shownResults().length > 0}>
+                                <div class={s.proxyList}>
+                                    <For each={shownResults()}>
+                                        {(r) => (
+                                            <div
+                                                class={cn(s.proxyItem, {
+                                                    [s.proxyItemBad]:
+                                                        !r.api_ok && !r.download_ok,
+                                                })}
+                                            >
+                                                <span class={s.proxyHost}>{r.host}</span>
+
+                                                <span class={s.proxyLatency}>
+                                                    <Show
+                                                        when={r.api_ok || r.download_ok}
+                                                        fallback="—"
+                                                    >
+                                                        {r.latency_ms} ms
+                                                    </Show>
+                                                </span>
+
+                                                <span
+                                                    class={cn(s.proxyTag, {
+                                                        [s.proxyTagOn]: r.api_ok,
+                                                    })}
+                                                    title={intl.getMessage(
+                                                        'update_proxy_api',
+                                                    )}
+                                                >
+                                                    API
+                                                </span>
+
+                                                <span
+                                                    class={cn(s.proxyTag, {
+                                                        [s.proxyTagOn]: r.download_ok,
+                                                    })}
+                                                    title={intl.getMessage(
+                                                        'update_proxy_download',
+                                                    )}
+                                                >
+                                                    {intl.getMessage('update_proxy_dl')}
+                                                </span>
+
+                                                <Button
+                                                    size="small"
+                                                    variant="secondary"
+                                                    class={s.proxyUse}
+                                                    onClick={() => {
+                                                        setEdited(false);
+                                                        setProxy(r.url);
+                                                    }}
+                                                >
+                                                    {intl.getMessage('update_proxy_use')}
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </For>
+                                </div>
+
+                                <Show when={results().length > visibleResults}>
+                                    <Button
+                                        size="small"
+                                        variant="secondary"
+                                        class={s.proxyMore}
+                                        onClick={() => setShowAll(!showAll())}
+                                    >
+                                        {showAll()
+                                            ? intl.getMessage('update_proxy_show_less')
+                                            : intl.getMessage('update_proxy_show_all', {
+                                                  count: results().length,
+                                              })}
+                                    </Button>
+                                </Show>
+                            </Show>
+                        </div>
                     </Show>
                 </div>
             </div>

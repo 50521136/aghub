@@ -196,6 +196,12 @@ type Settings struct {
 	// the user list itself into the gate, so removing a user immediately cuts
 	// that client off.
 	DenyUnmatched bool `json:"deny_unmatched"`
+
+	// UpdateProxy is the GitHub acceleration prefix used by the online
+	// updater, for example "https://gh-proxy.com".  It is empty when the
+	// updater connects to GitHub directly.  It is not related to users; it
+	// lives here because this is the AGHub-wide settings store.
+	UpdateProxy string `json:"update_proxy,omitempty"`
 }
 
 // Config is the configuration of a Manager.
@@ -733,7 +739,10 @@ func (m *Manager) GetSettings() (s *Settings) {
 		return &Settings{}
 	}
 
-	return &Settings{DenyUnmatched: cur.DenyUnmatched}
+	return &Settings{
+		DenyUnmatched: cur.DenyUnmatched,
+		UpdateProxy:   cur.UpdateProxy,
+	}
 }
 
 // SetSettings replaces the manager-wide settings.
@@ -742,10 +751,29 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 		return fmt.Errorf("users: settings are nil")
 	}
 
-	m.settings.Store(&Settings{DenyUnmatched: s.DenyUnmatched})
+	m.settings.Store(&Settings{
+		DenyUnmatched: s.DenyUnmatched,
+		UpdateProxy:   s.UpdateProxy,
+	})
 	m.dirty.Store(true)
 
 	m.logger.Info("user settings updated", "deny_unmatched", s.DenyUnmatched)
+
+	return nil
+}
+
+// SetUpdateProxy stores the online-update acceleration prefix, keeping the
+// other settings as they are.
+func (m *Manager) SetUpdateProxy(prefix string) (err error) {
+	cur := m.GetSettings()
+
+	m.settings.Store(&Settings{
+		DenyUnmatched: cur.DenyUnmatched,
+		UpdateProxy:   prefix,
+	})
+	m.dirty.Store(true)
+
+	m.logger.Info("online update proxy updated", "proxy", prefix)
 
 	return nil
 }

@@ -254,10 +254,13 @@ func (m *Manager) BulkAdd(text string, enabled bool) (res *BulkResult) {
 	now := m.now()
 
 	// Build everything up front and only then take the lock, so that a bad
-	// payload cannot leave a half-imported user list behind.
+	// payload cannot leave a half-imported user list behind.  order keeps the
+	// order of the entries, because a map iterates in a random one and the
+	// caller expects the result to match the input.
 	defs := make(map[string]*User, len(entries))
 	usages := make(map[string]*usage, len(entries))
 	seen := make(map[string]int, len(entries))
+	order := make([]string, 0, len(entries))
 
 	for i, e := range entries {
 		if prev, ok := seen[e.ID]; ok {
@@ -299,6 +302,7 @@ func (m *Manager) BulkAdd(text string, enabled bool) (res *BulkResult) {
 
 		defs[uid] = u
 		usages[uid] = &usage{}
+		order = append(order, uid)
 	}
 
 	if len(res.Errors) > 0 {
@@ -310,7 +314,9 @@ func (m *Manager) BulkAdd(text string, enabled bool) (res *BulkResult) {
 
 	// clashLocked reports a clash against the users that are already stored, so
 	// run it before merging the new ones in.
-	for _, u := range defs {
+	for _, uid := range order {
+		u := defs[uid]
+
 		clash, owner := m.clashLocked(u.UID, u.IDs)
 		if clash != "" {
 			res.Errors = append(res.Errors, &BulkError{
@@ -324,10 +330,10 @@ func (m *Manager) BulkAdd(text string, enabled bool) (res *BulkResult) {
 		return res
 	}
 
-	for uid, u := range defs {
-		m.defs[uid] = u
+	for _, uid := range order {
+		m.defs[uid] = defs[uid]
 		m.usage[uid] = usages[uid]
-		res.Users = append(res.Users, u)
+		res.Users = append(res.Users, defs[uid])
 	}
 
 	m.publishLocked()

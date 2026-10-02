@@ -59,7 +59,11 @@ import type {
     TlsConfig,
     TlsConfigBody,
     UpdateCheckResponse,
+    UpdateProxiesResponse,
+    UpdateSetProxyRequest,
     UpdateStatusResponse,
+    UpdateTestProxiesRequest,
+    UpdateTestProxiesResponse,
     UpstreamsConfig,
     UpstreamsConfigResponse,
     UserActionResponse,
@@ -1745,5 +1749,57 @@ export const aghubUpdateApply = async (options?: RequestInit): Promise<UpdateSta
     return customFetch<UpdateStatusResponse>(getAghubUpdateApplyUrl(), {
         ...options,
         method: 'POST',
+    });
+};
+
+export const getAghubUpdateProxiesUrl = () => {
+    return `control/aghub/update/proxies`;
+};
+
+/**
+ * @summary Get the built-in acceleration proxies and the one in use
+ */
+export const aghubUpdateProxies = async (options?: RequestInit): Promise<UpdateProxiesResponse> => {
+    return customFetch<UpdateProxiesResponse>(getAghubUpdateProxiesUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getAghubUpdateSetProxyUrl = () => {
+    return `control/aghub/update/proxy`;
+};
+
+/**
+ * @summary Set the acceleration proxy
+ */
+export const aghubUpdateSetProxy = async (
+    updateSetProxyRequest: UpdateSetProxyRequest,
+    options?: RequestInit,
+): Promise<UpdateProxiesResponse> => {
+    return customFetch<UpdateProxiesResponse>(getAghubUpdateSetProxyUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(updateSetProxyRequest),
+    });
+};
+
+export const getAghubUpdateTestProxiesUrl = () => {
+    return `control/aghub/update/test-proxies`;
+};
+
+/**
+ * @summary Test acceleration proxies against GitHub from this server
+ */
+export const aghubUpdateTestProxies = async (
+    updateTestProxiesRequest: UpdateTestProxiesRequest,
+    options?: RequestInit,
+): Promise<UpdateTestProxiesResponse> => {
+    return customFetch<UpdateTestProxiesResponse>(getAghubUpdateTestProxiesUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(updateTestProxiesRequest),
     });
 };

@@ -3,6 +3,7 @@ package users
 import (
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -112,6 +113,17 @@ func TestBulkAddCreatesUsers(t *testing.T) {
 
 	if len(res.Users) != 3 {
 		t.Fatalf("expected 3 users, got %d", len(res.Users))
+	}
+
+	// The result must follow the order of the input, not the random order of
+	// a map iteration.
+	names := make([]string, 0, len(res.Users))
+	for _, u := range res.Users {
+		names = append(names, u.IDs[0])
+	}
+
+	if !slices.Equal(names, []string{"a", "b", "c"}) {
+		t.Errorf("expected the users in input order, got %v", names)
 	}
 
 	// Every created user must be resolvable by its identifier straight away.

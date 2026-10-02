@@ -186,3 +186,132 @@
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+.proxyBlock {
+    max-width: 620px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--default-item-divider);
+}
+
+.proxyDesc {
+    margin: 0 0 10px;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}
+
+/* The shared button is a full-width form control, so the row only becomes
+   horizontal from the tablet breakpoint on. */
+.proxyRow {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    @media (min-width: 768px) {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+    }
+
+    button {
+        @media (min-width: 768px) {
+            width: auto;
+            min-width: 0;
+            flex-shrink: 0;
+        }
+    }
+}
+
+.proxyInput {
+    @media (min-width: 768px) {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+.proxyStatus,
+.proxyProgress,
+.proxySummary {
+    margin-top: 10px;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    word-break: break-all;
+}
+
+.proxyProgress {
+    color: var(--default-main-text);
+}
+
+.proxyList {
+    margin-top: 10px;
+}
+
+.proxyItem {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--default-cards-background);
+
+    &:not(:first-child) {
+        margin-top: 4px;
+    }
+
+    button {
+        width: auto;
+        min-width: 0;
+        flex-shrink: 0;
+    }
+}
+
+.proxyItemBad {
+    opacity: 0.5;
+}
+
+/* On a phone the host name takes a line of its own, so that the latency and the
+   tags do not squeeze it into an ellipsis. */
+.proxyHost {
+    flex: 1 0 100%;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    @media (min-width: 768px) {
+        flex: 1 1 auto;
+    }
+}
+
+.proxyLatency {
+    min-width: 54px;
+    flex-shrink: 0;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    font-variant-numeric: tabular-nums;
+}
+
+.proxyTag {
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background: var(--page-background-additional);
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.proxyTagOn {
+    color: var(--fills-switch-on-default);
+}
+
+.proxyMore {
+    width: auto;
+    min-width: 0;
+    margin-top: 8px;
+}
