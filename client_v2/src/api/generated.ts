@@ -2,6 +2,7 @@ import type {
     AccessList,
     AddUrlRequest,
     AddressesInfo,
+    BackupsResponse,
     BlockedServicesAll,
     BlockedServicesArray,
     BlockedServicesSchedule,
@@ -43,6 +44,8 @@ import type {
     QueryLogConfig,
     QueryLogParams,
     RemoveUrlRequest,
+    RestoreBackupRequest,
+    RestoreBackupResponse,
     RewriteEntryBody,
     RewriteList,
     RewriteSettings,
@@ -1706,6 +1709,39 @@ export const usersBulkAdd = async (
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(userBulkAddRequest),
+    });
+};
+
+export const getUsersBackupsUrl = () => {
+    return `control/users/backups`;
+};
+
+/**
+ * @summary List the dated backups of the user state
+ */
+export const usersBackups = async (options?: RequestInit): Promise<BackupsResponse> => {
+    return customFetch<BackupsResponse>(getUsersBackupsUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getUsersRestoreUrl = () => {
+    return `control/users/restore`;
+};
+
+/**
+ * @summary Replace all users with the ones from a backup
+ */
+export const usersRestore = async (
+    restoreBackupRequest: RestoreBackupRequest,
+    options?: RequestInit,
+): Promise<RestoreBackupResponse> => {
+    return customFetch<RestoreBackupResponse>(getUsersRestoreUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(restoreBackupRequest),
     });
 };
 

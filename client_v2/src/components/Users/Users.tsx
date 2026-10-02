@@ -15,6 +15,7 @@ import { deleteUsers, getUsers, resetUsers, toggleUsers, usersState } from 'pane
 import { addErrorToast, addSuccessToast } from 'panel/stores/toasts';
 
 import { BulkAddDialog } from './blocks/BulkAddDialog';
+import { BackupsDialog } from './blocks/BackupsDialog';
 import { UserDialog } from './blocks/UserDialog';
 import s from './Users.module.pcss';
 
@@ -228,6 +229,7 @@ export const Users = () => {
     const [edited, setEdited] = createSignal<User | null | undefined>(undefined);
     const [confirmKind, setConfirmKind] = createSignal<'delete' | 'reset' | ''>('');
     const [bulkAddShown, setBulkAddShown] = createSignal(false);
+    const [backupsShown, setBackupsShown] = createSignal(false);
 
     onMount(() => {
         getUsers();
@@ -688,6 +690,15 @@ export const Users = () => {
                             <button
                                 type="button"
                                 class={s.importButton}
+                                onClick={() => setBackupsShown(true)}
+                                data-testid="users-backups-button"
+                            >
+                                {intl.getMessage('users_backups')}
+                            </button>
+
+                            <button
+                                type="button"
+                                class={s.importButton}
                                 onClick={() => setBulkAddShown(true)}
                                 data-testid="users-bulk-add-button"
                             >
@@ -773,6 +784,10 @@ export const Users = () => {
 
             <Show when={bulkAddShown()}>
                 <BulkAddDialog onClose={() => setBulkAddShown(false)} />
+            </Show>
+
+            <Show when={backupsShown()}>
+                <BackupsDialog onClose={() => setBackupsShown(false)} />
             </Show>
 
             <Show when={confirmKind()}>

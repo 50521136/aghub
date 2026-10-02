@@ -2,15 +2,18 @@ import { createStore } from 'solid-js/store';
 import { untrack } from 'solid-js';
 import {
     usersAdd,
+    usersBackups,
     usersBulkAdd,
     usersDelete,
     usersList,
     usersReset,
+    usersRestore,
     usersSetSettings,
     usersToggle,
     usersUpdate,
 } from 'panel/api/generated';
 import type {
+    BackupInfo,
     User,
     UserAddRequest,
     UserBulkAddResponse,
@@ -214,4 +217,46 @@ export const toggleUsers = async (uids: string[], enabled: boolean) => {
 
     setState('processingSave', false);
     await getUsers();
+};
+
+/**
+ * getBackups loads the dated backups of the user state.
+ */
+export const getBackups = async (): Promise<BackupInfo[]> => {
+    try {
+        const data = await usersBackups();
+
+        return data.backups || [];
+    } catch (error) {
+        addErrorToast({ error });
+
+        return [];
+    }
+};
+
+/**
+ * restoreBackup replaces all users with the ones from the named backup and
+ * reloads the list.
+ */
+export const restoreBackup = async (name: string): Promise<boolean> => {
+    setState('processingSave', true);
+
+    try {
+        const data = await usersRestore({ name });
+
+        addSuccessToast(
+            intl.getMessage('users_backup_restored', { count: data.users ?? 0 }),
+        );
+
+        setState('processingSave', false);
+        await getUsers();
+
+        return true;
+    } catch (error) {
+        addErrorToast({ error });
+
+        setState('processingSave', false);
+
+        return false;
+    }
 };

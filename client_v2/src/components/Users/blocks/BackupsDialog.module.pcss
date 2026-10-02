@@ -1,0 +1,98 @@
+.dialog {
+    /* Wide enough for the date and the metadata on one line, and narrow enough
+       for the 480px the two footer buttons need. */
+    width: 460px;
+    max-width: calc(100vw - 32px);
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* The shared dialog body has no horizontal padding of its own, so this
+       keeps the list on the same edge as the title and the footer button. */
+    padding: 0 16px;
+}
+
+.hint {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}
+
+.empty {
+    padding: 20px 0;
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t3);
+    text-align: center;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--default-item-divider);
+
+    &:last-child {
+        border-bottom: none;
+    }
+}
+
+.info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.time {
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+    white-space: nowrap;
+}
+
+.meta {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.restore {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--default-link-text);
+    font-size: var(--fs-text-t3);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        background: var(--default-hover-background);
+    }
+
+    &:disabled {
+        color: var(--default-description-text);
+        cursor: default;
+    }
+}
+
+@media (max-width: 480px) {
+    .item {
+        padding: 8px 10px;
+    }
+}

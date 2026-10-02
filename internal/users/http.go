@@ -152,6 +152,64 @@ func (m *Manager) RegisterWebHandlers(reg aghhttp.Registrar) {
 	reg.Register(http.MethodPost, "/control/users/toggle", m.handleToggle)
 	reg.Register(http.MethodPost, "/control/users/import", m.handleImport)
 	reg.Register(http.MethodPost, "/control/users/bulk-add", m.handleBulkAdd)
+	reg.Register(http.MethodGet, "/control/users/backups", m.handleBackups)
+	reg.Register(http.MethodPost, "/control/users/restore", m.handleRestore)
+}
+
+// backupsResp is the response of the GET /control/users/backups HTTP API.
+type backupsResp struct {
+	// Backups are the dated backups of the user state, newest first.
+	Backups []*BackupInfo `json:"backups"`
+}
+
+// restoreReq is the request of the POST /control/users/restore HTTP API.
+type restoreReq struct {
+	// Name is the name of the backup to restore.
+	Name string `json:"name"`
+}
+
+// restoreResp is the response of the POST /control/users/restore HTTP API.
+type restoreResp struct {
+	// Users is the number of the restored users.
+	Users int `json:"users"`
+}
+
+// handleBackups is the handler for the GET /control/users/backups HTTP API.
+func (m *Manager) handleBackups(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	backups, err := m.Backups()
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &backupsResp{Backups: backups})
+}
+
+// handleRestore is the handler for the POST /control/users/restore HTTP API.
+func (m *Manager) handleRestore(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	req := &restoreReq{}
+	err := json.NewDecoder(r.Body).Decode(req)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "decoding request: %s", err)
+
+		return
+	}
+
+	n, err := m.RestoreBackup(req.Name)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "%s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &restoreResp{Users: n})
 }
 
 // handleSetSettings is the handler for the POST /control/users/settings HTTP
