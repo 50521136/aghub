@@ -78,6 +78,12 @@ func (m *Manager) load() (err error) {
 			us.total.Store(st.Total)
 			us.periodStart.Store(st.PeriodStart)
 			us.lastSeen.Store(st.LastSeen)
+			us.dayStart.Store(st.DayStart)
+			us.dayCount.Store(st.DayCount)
+
+			if len(st.History) > 0 {
+				us.history.Store(&st.History)
+			}
 		}
 
 		m.usage[u.UID] = us
@@ -103,12 +109,20 @@ func (m *Manager) save() (err error) {
 		state.Users = append(state.Users, u)
 
 		if us := m.usage[uid]; us != nil {
-			state.Usage[uid] = &usageState{
+			st := &usageState{
 				Requests:    us.requests.Load(),
 				Total:       us.total.Load(),
 				PeriodStart: us.periodStart.Load(),
 				LastSeen:    us.lastSeen.Load(),
+				DayStart:    us.dayStart.Load(),
+				DayCount:    us.dayCount.Load(),
 			}
+
+			if h := us.history.Load(); h != nil {
+				st.History = *h
+			}
+
+			state.Usage[uid] = st
 		}
 	}
 

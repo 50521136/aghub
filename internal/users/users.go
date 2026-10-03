@@ -105,6 +105,9 @@ type User struct {
 	Enabled bool `json:"enabled"`
 }
 
+// historyDays is the number of days of per-user usage history that is kept.
+const historyDays = 30
+
 // usage is the runtime usage state of a user.  It is persisted separately from
 // the user definition.
 type usage struct {
@@ -112,6 +115,19 @@ type usage struct {
 	total       atomic.Int64
 	periodStart atomic.Int64
 	lastSeen    atomic.Int64
+
+	// dayCount is the number of requests counted in the day bucket that
+	// dayStart points to.
+	dayCount atomic.Int64
+
+	// dayStart is the Unix timestamp of the local midnight of the day bucket
+	// that dayCount belongs to.  Zero means that no bucket is open yet.
+	dayStart atomic.Int64
+
+	// history maps a YYYY-MM-DD date to the number of requests made on that
+	// day.  It is published atomically as an immutable map so that readers
+	// never take a lock.  The background flusher is the only writer.
+	history atomic.Pointer[map[string]int64]
 }
 
 // usageState is the persistent representation of usage.
@@ -120,6 +136,19 @@ type usageState struct {
 	Total       int64 `json:"total_requests"`
 	PeriodStart int64 `json:"period_start"`
 	LastSeen    int64 `json:"last_seen"`
+
+	// DayStart is the Unix timestamp of the local midnight of the day bucket
+	// that is currently open.
+	DayStart int64 `json:"day_start,omitempty"`
+
+	// DayCount is the number of requests counted in the open day bucket.  It
+	// is persisted so that a restart does not lose the part of the day that
+	// has already been counted.
+	DayCount int64 `json:"day_count,omitempty"`
+
+	// History maps a YYYY-MM-DD date to the number of requests made on that
+	// day.
+	History map[string]int64 `json:"history,omitempty"`
 }
 
 // netEntry is a CIDR network owned by a user.
@@ -273,8 +302,11 @@ func (m *Manager) Start() {
 		for {
 			select {
 			case <-ticker.C:
+				now := m.now()
+
 				m.mu.Lock()
-				m.refreshPeriodsLocked(m.now())
+				m.refreshPeriodsLocked(now)
+				m.flushHistoryLocked(now)
 				m.mu.Unlock()
 
 				if m.dirty.Swap(false) {
@@ -503,6 +535,7 @@ func (m *Manager) AllowQuery(clientID string, ip netip.Addr) (ok bool, reason st
 
 	e.usage.requests.Add(1)
 	e.usage.total.Add(1)
+	e.usage.dayCount.Add(1)
 	e.usage.lastSeen.Store(now)
 
 	m.dirty.Store(true)
@@ -538,6 +571,94 @@ func (m *Manager) refreshPeriodsLocked(now time.Time) {
 	for _, p := range []Period{PeriodDay, PeriodMonth, PeriodTotal} {
 		m.periodStart[p] = periodStart(now, m.loc, p)
 	}
+}
+
+// flushHistoryLocked moves the request counters of the users into their daily
+// usage history and drops the history that is out of the retention window.
+//
+// The day buckets are rotated here rather than in the DNS request path so that
+// the latter stays free of locks.  The trade-off is that up to one flush
+// interval worth of requests made right after local midnight is attributed to
+// the previous day, which is acceptable for a usage report.
+//
+// m.mu is expected to be held by the caller.
+func (m *Manager) flushHistoryLocked(now time.Time) {
+	today := periodStart(now, m.loc, PeriodDay)
+
+	for _, e := range m.usage {
+		start := e.dayStart.Load()
+		if start == today {
+			continue
+		}
+
+		if start != 0 {
+			requests := e.dayCount.Swap(0)
+
+			// A user who has never made a request gets no history at all.
+			// Once there is one, idle days are recorded as zeros so that the
+			// gaps are visible in the report.
+			if requests > 0 || e.history.Load() != nil {
+				date := time.Unix(start, 0).In(m.loc).Format(time.DateOnly)
+				e.recordHistory(date, requests)
+			}
+		}
+
+		// When no bucket is open yet, which happens between the start of the
+		// process and the first flush, adopt the current day without touching
+		// the counter: the requests that were already counted happened within
+		// this flush interval, so they belong to this bucket.
+		e.dayStart.Store(today)
+	}
+}
+
+// recordHistory adds a day of usage to the history, publishing a new immutable
+// map so that concurrent readers do not need a lock.
+func (e *usage) recordHistory(date string, requests int64) {
+	next := map[string]int64{date: requests}
+
+	if prev := e.history.Load(); prev != nil {
+		for d, r := range *prev {
+			if _, ok := next[d]; !ok {
+				next[d] = r
+			}
+		}
+	}
+
+	if len(next) > historyDays {
+		dates := make([]string, 0, len(next))
+		for d := range next {
+			dates = append(dates, d)
+		}
+
+		// The keys are YYYY-MM-DD dates, so sorting them lexicographically
+		// also sorts them chronologically.
+		slices.Sort(dates)
+
+		for _, d := range dates[:len(dates)-historyDays] {
+			delete(next, d)
+		}
+	}
+
+	e.history.Store(&next)
+}
+
+// historyOf returns the usage history of the user, oldest first.
+func (e *usage) historyOf() (points []UsagePoint) {
+	h := e.history.Load()
+	if h == nil {
+		return nil
+	}
+
+	points = make([]UsagePoint, 0, len(*h))
+	for date, requests := range *h {
+		points = append(points, UsagePoint{Date: date, Requests: requests})
+	}
+
+	slices.SortFunc(points, func(a, b UsagePoint) (cmp int) {
+		return strings.Compare(a.Date, b.Date)
+	})
+
+	return points
 }
 
 // periodStart returns the Unix timestamp of the start of the period containing
@@ -576,6 +697,15 @@ func nextPeriodStart(t time.Time, loc *time.Location, p Period) (next int64) {
 	}
 }
 
+// UsagePoint is the number of requests a user made on a single day.
+type UsagePoint struct {
+	// Date is the local date in YYYY-MM-DD format.
+	Date string `json:"date"`
+
+	// Requests is the number of requests made on that day.
+	Requests int64 `json:"requests"`
+}
+
 // Info is the state of a user as reported to the API.
 type Info struct {
 	// User is the user definition.
@@ -611,6 +741,10 @@ type Info struct {
 	// ends and the request counter goes back to zero.  It is zero for a user
 	// whose quota is counted over the whole lifetime.
 	NextReset int64 `json:"next_reset"`
+
+	// History is the per-day request count of the user, oldest first.  It is
+	// limited to the most recent [historyDays] days.
+	History []UsagePoint `json:"history,omitempty"`
 }
 
 // info builds the API representation of an entry.
@@ -625,6 +759,7 @@ func (m *Manager) info(e *entry) (i *Info) {
 		PeriodStart:   e.usage.periodStart.Load(),
 		LastSeen:      e.usage.lastSeen.Load(),
 		NextReset:     nextPeriodStart(m.now(), m.loc, u.Period),
+		History:       e.usage.historyOf(),
 	}
 
 	if u.ExpiresAt > 0 {
