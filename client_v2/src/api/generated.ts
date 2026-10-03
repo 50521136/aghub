@@ -61,6 +61,7 @@ import type {
     StatsParams,
     TlsConfig,
     TlsConfigBody,
+    UpdateBackupResponse,
     UpdateCheckResponse,
     UpdateProxiesResponse,
     UpdateSetProxyRequest,
@@ -1837,5 +1838,34 @@ export const aghubUpdateTestProxies = async (
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(updateTestProxiesRequest),
+    });
+};
+
+export const getAghubUpdateBackupUrl = () => {
+    return `control/aghub/update/backup`;
+};
+
+/**
+ * @summary Get the version a rollback would restore
+ */
+export const aghubUpdateBackup = async (options?: RequestInit): Promise<UpdateBackupResponse> => {
+    return customFetch<UpdateBackupResponse>(getAghubUpdateBackupUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getAghubUpdateRollbackUrl = () => {
+    return `control/aghub/update/rollback`;
+};
+
+/**
+ * Starts the rollback in the background.  The process is restarted automatically when the previous version is restored.
+ * @summary Restore the previous version
+ */
+export const aghubUpdateRollback = async (options?: RequestInit): Promise<UpdateStatusResponse> => {
+    return customFetch<UpdateStatusResponse>(getAghubUpdateRollbackUrl(), {
+        ...options,
+        method: 'POST',
     });
 };

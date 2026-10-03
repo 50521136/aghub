@@ -85,6 +85,16 @@ func (web *webAPI) registerUpdateHandlers() {
 		"/control/aghub/update/test-proxies",
 		web.handleUpdateTestProxies,
 	)
+	web.httpReg.Register(
+		http.MethodGet,
+		"/control/aghub/update/backup",
+		web.handleUpdateBackup,
+	)
+	web.httpReg.Register(
+		http.MethodPost,
+		"/control/aghub/update/rollback",
+		web.handleUpdateRollback,
+	)
 }
 
 // updateStatusResp is the response of the GET /control/aghub/update/status HTTP
@@ -228,6 +238,122 @@ func applyUpdate(l *slog.Logger, updater *selfupdate.Updater) {
 	err = selfupdate.Restart(l, execPath)
 	if err != nil {
 		l.ErrorContext(ctx, "restarting after update", slogutil.KeyError, err)
+	}
+}
+
+// updateBackupResp is the response of the GET /control/aghub/update/backup HTTP
+// API.
+type updateBackupResp struct {
+	// Backup describes the previous version kept next to the executable.
+	Backup *selfupdate.Backup `json:"backup"`
+
+	// CurrentVersion is the version of the running application.
+	CurrentVersion string `json:"current_version"`
+}
+
+// handleUpdateBackup is the handler for the GET /control/aghub/update/backup
+// HTTP API.
+func (web *webAPI) handleUpdateBackup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := web.logger
+
+	updater := globalContext.updater
+	if updater == nil {
+		aghhttp.ErrorAndLog(
+			ctx,
+			l,
+			r,
+			w,
+			http.StatusServiceUnavailable,
+			"online update is not initialized",
+		)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &updateBackupResp{
+		Backup:         updater.Backup(),
+		CurrentVersion: updater.CurrentVersion(),
+	})
+}
+
+// handleUpdateRollback is the handler for the POST
+// /control/aghub/update/rollback HTTP API.  The rollback is performed in the
+// background and the process is restarted when it succeeds, so the response is
+// sent immediately.
+func (web *webAPI) handleUpdateRollback(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := web.logger
+
+	updater := globalContext.updater
+	if updater == nil {
+		aghhttp.ErrorAndLog(
+			ctx,
+			l,
+			r,
+			w,
+			http.StatusServiceUnavailable,
+			"online update is not initialized",
+		)
+
+		return
+	}
+
+	if !updater.Backup().Available {
+		aghhttp.ErrorAndLog(
+			ctx,
+			l,
+			r,
+			w,
+			http.StatusBadRequest,
+			"no backup to roll back to",
+		)
+
+		return
+	}
+
+	if updater.Status().Running {
+		aghhttp.ErrorAndLog(
+			ctx,
+			l,
+			r,
+			w,
+			http.StatusConflict,
+			"an update is already in progress",
+		)
+
+		return
+	}
+
+	go rollbackUpdate(l, updater)
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, newUpdateStatusResp(updater))
+}
+
+// rollbackUpdate performs the rollback and restarts the application.  It is
+// meant to be run in a separate goroutine.
+func rollbackUpdate(l *slog.Logger, updater *selfupdate.Updater) {
+	// The request context is already canceled at this point, so a background
+	// context is used instead.
+	ctx, cancel := context.WithTimeout(context.Background(), updateCtxTimeout)
+	defer cancel()
+
+	execPath := updater.ExecPath()
+
+	err := updater.Rollback(ctx)
+	if err != nil {
+		l.ErrorContext(ctx, "rolling back", slogutil.KeyError, err)
+
+		return
+	}
+
+	// Give the client the time to receive the response before the process is
+	// replaced.
+	time.Sleep(restartDelay)
+
+	err = selfupdate.Restart(l, execPath)
+	if err != nil {
+		l.ErrorContext(ctx, "restarting after rollback", slogutil.KeyError, err)
 	}
 }
 

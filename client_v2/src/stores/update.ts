@@ -3,13 +3,16 @@ import { untrack } from 'solid-js';
 
 import {
     aghubUpdateApply,
+    aghubUpdateBackup,
     aghubUpdateCheck,
     aghubUpdateProxies,
+    aghubUpdateRollback,
     aghubUpdateSetProxy,
     aghubUpdateStatus,
     aghubUpdateTestProxies,
 } from 'panel/api/generated';
 import type {
+    UpdateBackup,
     UpdateCheckResponse,
     UpdateProxyNode,
     UpdateProxyTest,
@@ -57,6 +60,12 @@ type UpdateState = {
     /** applying is true while the update is in progress. */
     applying: boolean;
 
+    /** backup is the previous version a rollback would restore, if any. */
+    backup: UpdateBackup | null;
+
+    /** rollingBack is true while the rollback is in progress. */
+    rollingBack: boolean;
+
     /** proxies is the built-in list of acceleration proxies. */
     proxies: UpdateProxyNode[];
 
@@ -94,6 +103,8 @@ const initialState: UpdateState = {
     initialized: false,
     checking: false,
     applying: false,
+    backup: null,
+    rollingBack: false,
     proxies: [],
     proxy: '',
     proxyCurrent: '',
@@ -264,6 +275,34 @@ export const applyUpdate = async () => {
     await pollUpdateStatus();
 };
 
+/** getBackup loads the previous version a rollback would restore. */
+export const getBackup = async () => {
+    try {
+        const data = await aghubUpdateBackup();
+        setState('backup', data.backup ?? null);
+    } catch (error) {
+        addErrorToast({ error });
+    }
+};
+
+/** rollbackUpdate restores the previous version and waits for the restart. */
+export const rollbackUpdate = async () => {
+    setState('rollingBack', true);
+
+    try {
+        await aghubUpdateRollback();
+    } catch (error) {
+        setState('rollingBack', false);
+        addErrorToast({ error });
+
+        return;
+    }
+
+    addSuccessToast(intl.getMessage('update_rollback_started'));
+
+    await pollUpdateStatus();
+};
+
 /**
  * pollUpdateStatus polls the update state until the update finishes or the
  * server restarts and stops responding.
@@ -281,7 +320,7 @@ const pollUpdateStatus = async () => {
             data = await aghubUpdateStatus();
         } catch {
             // The process is most likely restarting already.
-            setState({ applying: false });
+            setState({ applying: false, rollingBack: false });
 
             return;
         }
@@ -290,18 +329,18 @@ const pollUpdateStatus = async () => {
         setState('status', status);
 
         if (status.error) {
-            setState('applying', false);
+            setState({ applying: false, rollingBack: false });
             addErrorToast({ error: new Error(status.error) });
 
             return;
         }
 
         if (!status.running) {
-            setState('applying', false);
+            setState({ applying: false, rollingBack: false });
 
             return;
         }
     }
 
-    setState('applying', false);
+    setState({ applying: false, rollingBack: false });
 };

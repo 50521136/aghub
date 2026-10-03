@@ -1743,6 +1743,43 @@
           'description': 'An update is already in progress.'
         '503':
           'description': 'The online update is not initialized.'
+  '/aghub/update/backup':
+    'get':
+      'tags':
+      - 'aghub'
+      'operationId': 'aghubUpdateBackup'
+      'summary': 'Get the version a rollback would restore'
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UpdateBackupResponse'
+        '503':
+          'description': 'The online update is not initialized.'
+  '/aghub/update/rollback':
+    'post':
+      'tags':
+      - 'aghub'
+      'operationId': 'aghubUpdateRollback'
+      'summary': 'Restore the previous version'
+      'description': >
+        Starts the rollback in the background.  The process is restarted
+        automatically when the previous version is restored.
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UpdateStatusResponse'
+        '400':
+          'description': 'There is no backup to roll back to.'
+        '409':
+          'description': 'An update is already in progress.'
+        '503':
+          'description': 'The online update is not initialized.'
 'components':
   'requestBodies':
     'TlsConfig':
@@ -1827,6 +1864,26 @@
           'type': 'boolean'
         'done':
           'type': 'boolean'
+    'UpdateBackup':
+      'type': 'object'
+      'description': 'The previous version kept next to the executable.'
+      'properties':
+        'available':
+          'type': 'boolean'
+        'version':
+          'type': 'string'
+        'saved_at':
+          'type': 'integer'
+        'size':
+          'type': 'integer'
+    'UpdateBackupResponse':
+      'type': 'object'
+      'description': 'The backup that a rollback would restore.'
+      'properties':
+        'backup':
+          '$ref': '#/components/schemas/UpdateBackup'
+        'current_version':
+          'type': 'string'
     'UpdateCheckResponse':
       'type': 'object'
       'description': 'The result of a version check.'

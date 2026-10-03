@@ -20,6 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
 )
 
 // These variables are set by the linker during the release build.
@@ -541,7 +543,178 @@ func (u *Updater) Apply(ctx context.Context) (err error) {
 		return err
 	}
 
+	// The binary that was just replaced is now the backup, and its version is
+	// the one this process is still running.
+	u.storeBackupVersion(ctx, Version)
+
 	u.logger.InfoContext(ctx, "update installed", "version", rel.Version, "path", u.execPath)
+
+	u.setStatus(func(s *Status) {
+		s.Message = "restarting"
+		s.Done = true
+		s.Progress = 1
+	})
+
+	return nil
+}
+
+// backupSuffix is appended to the path of the executable to form the path of
+// the backup kept next to it.
+const backupSuffix = ".bak"
+
+// backupInfoSuffix is appended to the path of the executable to form the path
+// of the file describing the backup.
+const backupInfoSuffix = ".bak.json"
+
+// Backup describes the previous version of the executable that is kept next to
+// it.
+type Backup struct {
+	// Available is true when the backup binary is present.
+	Available bool `json:"available"`
+
+	// Version is the version of the backup.  It is empty when it is unknown,
+	// which is the case for a backup that was made by a build that predates
+	// this information.
+	Version string `json:"version,omitempty"`
+
+	// SavedAt is the Unix timestamp in seconds at which the backup was made.
+	SavedAt int64 `json:"saved_at,omitempty"`
+
+	// Size is the size of the backup binary in bytes.
+	Size int64 `json:"size,omitempty"`
+}
+
+// backupInfo is the persistent description of the backup.
+type backupInfo struct {
+	Version string `json:"version"`
+	SavedAt int64  `json:"saved_at"`
+}
+
+// BackupPath returns the path of the backup of the executable.
+func (u *Updater) BackupPath() (path string) {
+	return u.execPath + backupSuffix
+}
+
+// Backup describes the backup of the executable kept next to it.
+func (u *Updater) Backup() (b *Backup) {
+	b = &Backup{}
+
+	st, err := os.Stat(u.BackupPath())
+	if err != nil || st.IsDir() {
+		return b
+	}
+
+	b.Available = true
+	b.Size = st.Size()
+
+	info, err := readBackupInfo(u.execPath + backupInfoSuffix)
+	if err == nil {
+		b.Version = info.Version
+		b.SavedAt = info.SavedAt
+	}
+
+	return b
+}
+
+// readBackupInfo reads the description of the backup.
+func readBackupInfo(path string) (info *backupInfo, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	info = &backupInfo{}
+
+	err = json.Unmarshal(data, info)
+	if err != nil {
+		return nil, fmt.Errorf("selfupdate: parsing the backup description: %w", err)
+	}
+
+	return info, nil
+}
+
+// storeBackupVersion records the version of the binary that was just kept as
+// the backup.
+func (u *Updater) storeBackupVersion(ctx context.Context, version string) {
+	info := &backupInfo{Version: version, SavedAt: time.Now().Unix()}
+
+	err := writeBackupInfo(u.execPath+backupInfoSuffix, info)
+	if err != nil {
+		// Not fatal: the rollback itself stays possible, only the version of
+		// the backup is unknown.
+		u.logger.WarnContext(ctx, "storing the backup version", slogutil.KeyError, err)
+	}
+}
+
+// writeBackupInfo stores the description of the backup.
+func writeBackupInfo(path string, info *backupInfo) (err error) {
+	data, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("selfupdate: encoding the backup description: %w", err)
+	}
+
+	err = os.WriteFile(path, data, 0o644)
+	if err != nil {
+		return fmt.Errorf("selfupdate: writing the backup description: %w", err)
+	}
+
+	return nil
+}
+
+// Rollback replaces the executable with the backup kept next to it and keeps
+// the replaced binary as the new backup, so that the operation can be undone by
+// rolling back again.  It returns once the replacement is done; the restart
+// terminates the process.
+func (u *Updater) Rollback(ctx context.Context) (err error) {
+	backupPath := u.BackupPath()
+
+	_, serr := os.Stat(backupPath)
+	if serr != nil {
+		return fmt.Errorf("selfupdate: no backup to roll back to: %w", serr)
+	}
+
+	u.setStatus(func(s *Status) {
+		*s = Status{StartedAt: time.Now(), Running: true, Progress: -1}
+	})
+
+	defer func() {
+		u.setStatus(func(s *Status) {
+			s.Running = false
+			s.Error = ""
+			if err != nil {
+				s.Error = err.Error()
+			}
+		})
+	}()
+
+	u.setStatus(func(s *Status) { s.Message = "rolling back" })
+
+	// Keep the current binary aside before the backup takes its place, so
+	// that a failure in between still leaves a working executable behind.
+	prevPath := u.execPath + ".rollback-tmp"
+
+	defer func() { _ = os.Remove(prevPath) }()
+
+	err = copyFile(u.execPath, prevPath, 0o755)
+	if err != nil {
+		return fmt.Errorf("selfupdate: keeping the current binary: %w", err)
+	}
+
+	err = os.Rename(backupPath, u.execPath)
+	if err != nil {
+		return fmt.Errorf("selfupdate: restoring the backup: %w", err)
+	}
+
+	err = os.Rename(prevPath, backupPath)
+	if err != nil {
+		return fmt.Errorf("selfupdate: keeping the replaced binary as the backup: %w", err)
+	}
+
+	// The binary that was just replaced is now the backup, and its version is
+	// the one this process is still running.
+	u.storeBackupVersion(ctx, Version)
+
+	u.logger.InfoContext(ctx, "rolled back", "version", Version, "path", u.execPath)
 
 	u.setStatus(func(s *Status) {
 		s.Message = "restarting"

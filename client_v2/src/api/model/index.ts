@@ -117,6 +117,8 @@ export * from './tlsConfigBody';
 export * from './tlsConfigKeyType';
 export * from './topArrayEntry';
 export * from './updateAsset';
+export * from './updateBackup';
+export * from './updateBackupResponse';
 export * from './updateCheckResponse';
 export * from './updateProxiesResponse';
 export * from './updateProxyNode';

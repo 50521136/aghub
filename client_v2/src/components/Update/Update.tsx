@@ -4,14 +4,17 @@ import cn from 'clsx';
 import intl from 'panel/common/intl';
 import theme from 'panel/lib/theme';
 import { Button } from 'panel/common/ui/Button';
+import { ConfirmDialog } from 'panel/common/ui/ConfirmDialog';
 import { Loader } from 'panel/common/ui/Loader';
 import { Input } from 'panel/common/controls/Input';
 import {
     applyUpdate,
     checkForUpdate,
+    getBackup,
     getProxies,
     getUpdateState,
     proxyResultsSorted,
+    rollbackUpdate,
     setProxy,
     testProxies,
     updateState,
@@ -61,14 +64,38 @@ const progressClass = (value: number) => {
 export const Update = () => {
     const [proxyInput, setProxyInput] = createSignal('');
     const [showAll, setShowAll] = createSignal(false);
+    const [rollbackShown, setRollbackShown] = createSignal(false);
 
     onMount(() => {
         getUpdateState();
         getProxies();
+        getBackup();
         // Fill the latest-version card in by itself, so the page does not look
         // broken until someone presses the button.
         checkForUpdate(true);
     });
+
+    // The rollback button names the version it would restore when it is known.
+    const rollbackLabel = createMemo(() => {
+        const version = updateState.backup?.version;
+
+        return version
+            ? intl.getMessage('update_rollback_to', { version })
+            : intl.getMessage('update_rollback');
+    });
+
+    const rollbackText = createMemo(() => {
+        const version = updateState.backup?.version;
+
+        return version
+            ? intl.getMessage('update_rollback_confirm', { version })
+            : intl.getMessage('update_rollback_confirm_unknown');
+    });
+
+    const confirmRollback = () => {
+        setRollbackShown(false);
+        rollbackUpdate();
+    };
 
     // The input follows the saved value until the user edits it.
     const [edited, setEdited] = createSignal(false);
@@ -189,6 +216,18 @@ export const Update = () => {
                                     data-testid="update-apply"
                                 >
                                     {intl.getMessage('update_install')}
+                                </Button>
+                            </Show>
+
+                            <Show when={updateState.backup?.available}>
+                                <Button
+                                    size="small"
+                                    variant="secondary"
+                                    disabled={busy()}
+                                    onClick={() => setRollbackShown(true)}
+                                    data-testid="update-rollback"
+                                >
+                                    {rollbackLabel()}
                                 </Button>
                             </Show>
 
@@ -388,6 +427,19 @@ export const Update = () => {
                     </Show>
                 </div>
             </div>
+
+            <Show when={rollbackShown()}>
+                <ConfirmDialog
+                    onClose={() => setRollbackShown(false)}
+                    onConfirm={confirmRollback}
+                    submitDisabled={updateState.rollingBack}
+                    buttonText={intl.getMessage('update_rollback')}
+                    cancelText={intl.getMessage('cancel')}
+                    text={rollbackText()}
+                    title={intl.getMessage('update_rollback_confirm_title')}
+                    submitTestId="update-rollback-confirm"
+                />
+            </Show>
         </div>
     );
 };
