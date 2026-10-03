@@ -41,6 +41,15 @@ const (
 	// DefaultLoginWindow is the length of the lockout.
 	DefaultLoginWindow = 15 * time.Minute
 
+	// DefaultCodeRequests is how many verification codes one address may ask
+	// for in [DefaultCodeWindow].
+	DefaultCodeRequests = 5
+
+	// DefaultCodeWindow is the window of [DefaultCodeRequests].  It is much
+	// longer than the sign-in window, because every request sends a real
+	// message to a real mailbox.
+	DefaultCodeWindow = 30 * time.Minute
+
 	// DefaultLogLimit is the number of log entries returned when the request
 	// does not ask for a different number.
 	DefaultLogLimit = 100
@@ -76,6 +85,16 @@ type UserStore interface {
 	// allowed origins from them on every request, so that the administrator
 	// does not have to restart AGHub after changing them.
 	GetSettings() (s *users.Settings)
+
+	// Register creates an account for a portal user, generating the identifier
+	// that the account and the DNS identity share.
+	Register(p *users.RegisterParams) (u *users.User, err error)
+
+	// SetEmail sets or clears the e-mail address of the user.
+	SetEmail(uid, email string, verified bool) (err error)
+
+	// SetPortalPassword sets the portal password of the user.
+	SetPortalPassword(uid, password string) (err error)
 }
 
 // LogSource provides the query log entries of a single user.
@@ -138,6 +157,14 @@ type Config struct {
 	// [DefaultLoginWindow].
 	LoginWindow time.Duration
 
+	// CodeRequests is how many verification codes an address may ask for in
+	// [Config.CodeWindow].  Zero means [DefaultCodeRequests].
+	CodeRequests int
+
+	// CodeWindow is the window of [Config.CodeRequests].  Zero means
+	// [DefaultCodeWindow].
+	CodeWindow time.Duration
+
 	// Now returns the current time.  It is only replaced in tests.
 	Now func() time.Time
 }
@@ -151,6 +178,15 @@ type Manager struct {
 	limiter  *loginLimiter
 	now      func() time.Time
 	ttl      time.Duration
+
+	// codes holds the pending e-mail verifications.  They are deliberately in
+	// memory: a code that does not survive a restart is safer, and losing one
+	// only costs the user another request.
+	codes *codeStore
+
+	// codeLimiter bounds how many messages one address can make the server
+	// send, so that the portal cannot be used as a mail relay.
+	codeLimiter *loginLimiter
 }
 
 // New creates a new portal manager.
@@ -183,19 +219,31 @@ func New(conf *Config) (m *Manager, err error) {
 		window = DefaultLoginWindow
 	}
 
+	codeRequests := conf.CodeRequests
+	if codeRequests <= 0 {
+		codeRequests = DefaultCodeRequests
+	}
+
+	codeWindow := conf.CodeWindow
+	if codeWindow <= 0 {
+		codeWindow = DefaultCodeWindow
+	}
+
 	now := conf.Now
 	if now == nil {
 		now = time.Now
 	}
 
 	return &Manager{
-		logger:   conf.Logger.With(slogutil.KeyPrefix, "portal"),
-		users:    conf.Users,
-		sessions: conf.Sessions,
-		log:      conf.Log,
-		limiter:  newLoginLimiter(attempts, window, now),
-		now:      now,
-		ttl:      ttl,
+		logger:      conf.Logger.With(slogutil.KeyPrefix, "portal"),
+		users:       conf.Users,
+		sessions:    conf.Sessions,
+		log:         conf.Log,
+		limiter:     newLoginLimiter(attempts, window, now),
+		now:         now,
+		ttl:         ttl,
+		codes:       &codeStore{m: map[string]*emailCode{}},
+		codeLimiter: newLoginLimiter(codeRequests, codeWindow, now),
 	}, nil
 }
 

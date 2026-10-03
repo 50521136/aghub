@@ -28,6 +28,16 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/portal/api/me", m.handleMe)
 	reg.Register(http.MethodGet, "/portal/api/log", m.handleLog)
 
+	// Sign-up and the account pages.  These are public because a user who
+	// cannot sign in yet still has to be able to reach them.
+	reg.Register(http.MethodGet, "/portal/api/config", m.handleConfig)
+	reg.Register(http.MethodPost, "/portal/api/email/code", m.handleEmailCode)
+	reg.Register(http.MethodPost, "/portal/api/register", m.handleRegister)
+
+	// These need a session of their own.
+	reg.Register(http.MethodPost, "/portal/api/password", m.handlePassword)
+	reg.Register(http.MethodPost, "/portal/api/email", m.handleEmail)
+
 	// The bundled front-end is served on the same origin as the API.  A
 	// deployment that hosts the front-end elsewhere simply ignores it.
 	m.registerStatic(reg)
@@ -40,6 +50,7 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 // not for the portal users.
 func (m *Manager) RegisterAdmin(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/control/portal/package", m.handlePackage)
+	reg.Register(http.MethodPost, "/control/portal/mail/test", m.handleMailTest)
 }
 
 // handlePackage is the handler for the GET /control/portal/package HTTP API.

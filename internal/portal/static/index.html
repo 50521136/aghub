@@ -153,15 +153,62 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       </form>
     </div>
     <p class="tiny muted center" id="login-hint"></p>
+    <p class="tiny muted center hidden" id="login-register">
+      还没有账号？<a href="#" id="login-register-link">立即注册</a>
+    </p>
   </section>
 
   <!-- 面板 -->
+  <section id="register-view" class="hidden">
+    <div class="row" style="margin:18px 0 16px">
+      <h1>注册账号</h1>
+    </div>
+
+    <div class="card">
+      <div id="register-alert" class="alert err"></div>
+      <form id="register-form" autocomplete="on">
+        <label class="tiny muted" for="register-name">名称（可留空）</label>
+        <input id="register-name" name="name" autocomplete="nickname"
+               placeholder="给自己起个名字">
+
+        <div id="register-email-block" class="hidden">
+          <label class="tiny muted" for="register-email">邮箱</label>
+          <div class="row" style="gap:8px">
+            <input id="register-email" name="email" type="email" autocomplete="email"
+                   placeholder="you@example.com" style="flex:1">
+            <button id="register-code-btn" class="small" type="button">发验证码</button>
+          </div>
+          <label class="tiny muted" for="register-code">验证码</label>
+          <input id="register-code" name="code" inputmode="numeric" autocomplete="one-time-code"
+                 placeholder="6 位数字">
+        </div>
+
+        <label class="tiny muted" for="register-pass">密码</label>
+        <input id="register-pass" name="password" type="password" autocomplete="new-password"
+               placeholder="至少 8 位" required>
+
+        <button id="register-btn" class="primary wide" type="submit">注册</button>
+      </form>
+    </div>
+
+    <p class="tiny muted center" style="margin:14px 0 0">
+      注册后系统会分配一个专属标识，它就是你的 DoT / DoH 域名前缀，<b>不可更改</b>。
+    </p>
+    <p class="tiny muted center" style="margin:10px 0 0">
+      <a href="#" id="register-back">返回登录</a>
+    </p>
+  </section>
+
   <section id="panel-view" class="hidden">
     <div class="row spread" style="margin:16px 0 14px">
       <h1 id="account-name">我的账号</h1>
       <button id="logout-btn" class="small">退出</button>
     </div>
     <div id="panel-alert" class="alert err"></div>
+    <div id="announcement" class="card hidden" style="border-left:3px solid var(--blue,#2f6feb)">
+      <div class="tiny muted" style="margin-bottom:6px">公告</div>
+      <div id="announcement-text" class="small" style="white-space:pre-wrap"></div>
+    </div>
 
     <div class="card">
       <h2>连接信息</h2>
@@ -187,6 +234,34 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         <span id="axis-end"></span>
       </div>
       <p class="tiny muted" id="history-hint" style="margin:8px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <h2>账号设置</h2>
+
+      <div class="row spread" style="margin-bottom:4px">
+        <span class="tiny muted">邮箱</span>
+        <span id="email-state" class="tiny muted">未绑定</span>
+      </div>
+      <div class="row" style="gap:8px">
+        <input id="email-input" type="email" placeholder="you@example.com" style="flex:1">
+        <button id="email-code-btn" class="small">发验证码</button>
+      </div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <input id="email-code" inputmode="numeric" placeholder="验证码" style="flex:1">
+        <button id="email-bind-btn" class="small primary">绑定</button>
+        <button id="email-clear-btn" class="small hidden">解绑</button>
+      </div>
+      <p class="tiny muted" id="email-hint" style="margin:8px 0 0"></p>
+
+      <hr style="border:0;border-top:1px solid var(--line,#e5e7eb);margin:16px 0">
+
+      <div class="tiny muted" style="margin-bottom:8px">修改密码</div>
+      <input id="pass-old" type="password" autocomplete="current-password" placeholder="当前密码">
+      <input id="pass-new" type="password" autocomplete="new-password"
+             placeholder="新密码（至少 8 位）" style="margin-top:8px">
+      <button id="pass-btn" class="small" style="margin-top:10px">修改密码</button>
+      <p class="tiny muted" id="pass-hint" style="margin:8px 0 0"></p>
     </div>
 
     <div class="card">
@@ -275,13 +350,22 @@ var STATUS = {
 
 function showLogin(msg) {
   $("panel-view").classList.add("hidden");
+  $("register-view").classList.add("hidden");
   $("login-view").classList.remove("hidden");
   showAlert($("login-alert"), msg);
 }
 
 function showPanel() {
   $("login-view").classList.add("hidden");
+  $("register-view").classList.add("hidden");
   $("panel-view").classList.remove("hidden");
+}
+
+function showRegister() {
+  $("login-view").classList.add("hidden");
+  $("panel-view").classList.add("hidden");
+  $("register-view").classList.remove("hidden");
+  showAlert($("register-alert"), "");
 }
 
 $("login-form").addEventListener("submit", function (e) {
@@ -601,19 +685,243 @@ $("log-term").addEventListener("keydown", function (e) {
   if (e.key === "Enter") { exhausted = false; loadLog(true); }
 });
 
-/* ---------- 启动 ---------- */
+/* ---------- 注册与账号设置 ---------- */
 
-api("/portal/api/me").then(function (r) {
-  if (!r.ok) { return null; }
-  return r.json();
-}).then(function (d) {
-  if (d && d.user) {
+// 由 /portal/api/config 填充：注册开关、是否要邮箱验证、公告。
+var PORTAL_CONFIG = {
+  registration_open: false,
+  email_required: false,
+  announcement: "",
+};
+
+function loadConfig() {
+  return api("/portal/api/config").then(function (r) {
+    if (!r.ok) { return null; }
+    return r.json();
+  }).then(function (d) {
+    if (d) { PORTAL_CONFIG = d; }
+
+    $("login-register").classList.toggle("hidden", !PORTAL_CONFIG.registration_open);
+    $("register-email-block").classList.toggle("hidden", !PORTAL_CONFIG.email_required);
+
+    var text = PORTAL_CONFIG.announcement || "";
+    $("announcement-text").textContent = text;
+    $("announcement").classList.toggle("hidden", !text);
+  }).catch(function () {
+    // 配置拉不到不该挡住登录，按最保守的默认值继续。
+  });
+}
+
+/* ---------- 注册 ---------- */
+
+$("login-register-link").addEventListener("click", function (e) {
+  e.preventDefault();
+  showRegister();
+});
+
+$("register-back").addEventListener("click", function (e) {
+  e.preventDefault();
+  showLogin("");
+});
+
+// 验证码按钮：发送成功后进入倒计时，免得连点把服务器当发信机用。
+function codeButton(btn, getEmail, alertEl) {
+  var left = 0;
+  var timer = null;
+  var label = btn.textContent;
+
+  var tick = function () {
+    if (left <= 0) {
+      clearInterval(timer);
+      timer = null;
+      btn.disabled = false;
+      btn.textContent = label;
+      return;
+    }
+
+    btn.textContent = left + " 秒后可重发";
+    left -= 1;
+  };
+
+  btn.addEventListener("click", function () {
+    var email = (getEmail() || "").trim();
+    if (!email) {
+      showAlert(alertEl, "请先填邮箱");
+      return;
+    }
+
+    btn.disabled = true;
+    showAlert(alertEl, "");
+
+    api("/portal/api/email/code", { method: "POST", body: { email: email } })
+      .then(function (r) {
+        if (r.ok) { return null; }
+        if (r.status === 429) { throw new Error("发送太频繁，请稍后再试"); }
+        if (r.status === 503) { throw new Error("管理员还没有配置邮件服务器"); }
+        throw new Error("发送失败（HTTP " + r.status + "）");
+      })
+      .then(function () {
+        left = 60;
+        tick();
+        timer = setInterval(tick, 1000);
+      })
+      .catch(function (err) {
+        showAlert(alertEl, err.message);
+        btn.disabled = false;
+      });
+  });
+}
+
+codeButton($("register-code-btn"),
+  function () { return $("register-email").value; }, $("register-alert"));
+
+$("register-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+
+  var btn = $("register-btn");
+  btn.disabled = true;
+  showAlert($("register-alert"), "");
+
+  api("/portal/api/register", {
+    method: "POST",
+    body: {
+      name: $("register-name").value,
+      password: $("register-pass").value,
+      email: $("register-email").value,
+      code: $("register-code").value,
+    },
+  }).then(function (r) {
+    if (r.ok) { return r.json(); }
+    if (r.status === 403) { throw new Error("管理员已关闭注册"); }
+    if (r.status === 503) { throw new Error("管理员还没有配置邮件服务器"); }
+
+    // 服务端的校验消息（密码太短、邮箱已注册等）比通用文案有用得多。
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      throw new Error(d.error || ("注册失败（HTTP " + r.status + "）"));
+    });
+  }).then(function (d) {
+    $("register-pass").value = "";
+    $("register-code").value = "";
     showPanel();
     renderUser(d.user);
-    loadLog(true);
-  } else {
-    showLogin("");
+    renderAccount(d.user);
+    return loadLog(true);
+  }).catch(function (err) {
+    showAlert($("register-alert"), err.message);
+  }).finally(function () {
+    btn.disabled = false;
+  });
+});
+
+/* ---------- 账号设置 ---------- */
+
+function renderAccount(u) {
+  if (!u) { return; }
+
+  var email = u.email || "";
+  $("email-state").textContent = email
+    ? (email + (u.email_verified ? "（已验证）" : "（未验证）"))
+    : "未绑定";
+
+  // 已经绑定的地址填进去，省得用户再打一遍。
+  if (email && !$("email-input").value) { $("email-input").value = email; }
+
+  $("email-clear-btn").classList.toggle("hidden", !email);
+}
+
+codeButton($("email-code-btn"),
+  function () { return $("email-input").value; }, $("email-hint"));
+
+$("email-bind-btn").addEventListener("click", function () {
+  var email = $("email-input").value.trim();
+  if (!email) {
+    showAlert($("email-hint"), "请先填邮箱");
+    return;
   }
+
+  $("email-bind-btn").disabled = true;
+  showAlert($("email-hint"), "");
+
+  api("/portal/api/email", {
+    method: "POST",
+    body: { email: email, code: $("email-code").value },
+  }).then(function (r) {
+    if (r.ok) { return r.json(); }
+    if (r.status === 503) { throw new Error("管理员还没有配置邮件服务器"); }
+
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      throw new Error(d.error || ("绑定失败（HTTP " + r.status + "）"));
+    });
+  }).then(function (d) {
+    $("email-code").value = "";
+    showAlert($("email-hint"), "已绑定");
+    renderAccount(d.user);
+  }).catch(function (err) {
+    showAlert($("email-hint"), err.message);
+  }).finally(function () {
+    $("email-bind-btn").disabled = false;
+  });
+});
+
+$("email-clear-btn").addEventListener("click", function () {
+  showAlert($("email-hint"), "");
+
+  api("/portal/api/email", { method: "POST", body: { email: "" } })
+    .then(function (r) {
+      if (!r.ok) { throw new Error("解绑失败（HTTP " + r.status + "）"); }
+      return r.json();
+    }).then(function (d) {
+      $("email-input").value = "";
+      $("email-code").value = "";
+      showAlert($("email-hint"), "已解绑");
+      renderAccount(d.user);
+    }).catch(function (err) {
+      showAlert($("email-hint"), err.message);
+    });
+});
+
+$("pass-btn").addEventListener("click", function () {
+  $("pass-btn").disabled = true;
+  showAlert($("pass-hint"), "");
+
+  api("/portal/api/password", {
+    method: "POST",
+    body: { old_password: $("pass-old").value, new_password: $("pass-new").value },
+  }).then(function (r) {
+    if (r.ok) { return null; }
+    if (r.status === 401) { throw new Error("当前密码不对"); }
+
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      throw new Error(d.error || ("修改失败（HTTP " + r.status + "）"));
+    });
+  }).then(function () {
+    $("pass-old").value = "";
+    $("pass-new").value = "";
+    showAlert($("pass-hint"), "密码已修改");
+  }).catch(function (err) {
+    showAlert($("pass-hint"), err.message);
+  }).finally(function () {
+    $("pass-btn").disabled = false;
+  });
+});
+
+/* ---------- 启动 ---------- */
+
+// 先拉配置再拉会话：注册入口和公告跟着配置走，但配置失败也不能挡住登录。
+loadConfig().then(function () {
+  return api("/portal/api/me").then(function (r) {
+    if (!r.ok) { return null; }
+    return r.json();
+  }).then(function (d) {
+    if (d && d.user) {
+      showPanel();
+      renderUser(d.user);
+      renderAccount(d.user);
+      loadLog(true);
+    } else {
+      showLogin("");
+    }
+  });
 }).catch(function () {
   showLogin("");
 });
