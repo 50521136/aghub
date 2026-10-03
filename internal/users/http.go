@@ -219,7 +219,7 @@ func (m *Manager) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := m.logger
 
-	req := &Settings{}
+	req := &settingsReq{}
 	err := json.NewDecoder(r.Body).Decode(req)
 	if err != nil {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "decoding request: %s", err)
@@ -227,7 +227,7 @@ func (m *Manager) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = m.SetSettings(req)
+	err = m.SetSettings(req.applyTo(m.GetSettings()))
 	if err != nil {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "%s", err)
 
@@ -235,6 +235,39 @@ func (m *Manager) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &settingsResp{Settings: m.GetSettings()})
+}
+
+// settingsReq is the request body of the POST /control/users/settings HTTP
+// API.  Every field is optional: an absent one keeps its current value, so a
+// caller that changes a single setting cannot silently clear the others.  A
+// plain [Settings] would replace everything, and clearing the portal origins
+// by toggling an unrelated switch is not something an administrator can see.
+type settingsReq struct {
+	DenyUnmatched *bool     `json:"deny_unmatched,omitempty"`
+	UpdateProxy   *string   `json:"update_proxy,omitempty"`
+	PortalOrigins *[]string `json:"portal_origins,omitempty"`
+	PortalAPIBase *string   `json:"portal_api_base,omitempty"`
+}
+
+// applyTo returns cur with the fields present in req replaced.
+func (r *settingsReq) applyTo(cur *Settings) (s *Settings) {
+	if r.DenyUnmatched != nil {
+		cur.DenyUnmatched = *r.DenyUnmatched
+	}
+
+	if r.UpdateProxy != nil {
+		cur.UpdateProxy = *r.UpdateProxy
+	}
+
+	if r.PortalOrigins != nil {
+		cur.PortalOrigins = *r.PortalOrigins
+	}
+
+	if r.PortalAPIBase != nil {
+		cur.PortalAPIBase = *r.PortalAPIBase
+	}
+
+	return cur
 }
 
 // handleBulkAdd is the handler for the POST /control/users/bulk-add HTTP API.

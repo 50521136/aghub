@@ -168,3 +168,98 @@ func TestValidateID(t *testing.T) {
 		}
 	}
 }
+
+func TestSetUpdateProxyKeepsTheOtherSettings(t *testing.T) {
+	m, _ := newTestManager(t)
+
+	err := m.SetSettings(&Settings{
+		DenyUnmatched: true,
+		PortalOrigins: []string{"https://portal.example.com"},
+		PortalAPIBase: "https://dns.example.com:3004",
+	})
+	if err != nil {
+		t.Fatalf("setting settings: %v", err)
+	}
+
+	err = m.SetUpdateProxy("https://gh-proxy.com")
+	if err != nil {
+		t.Fatalf("setting update proxy: %v", err)
+	}
+
+	// Changing the update proxy must not touch the rest of the settings.
+	s := m.GetSettings()
+	if s.UpdateProxy != "https://gh-proxy.com" {
+		t.Errorf("expected the new proxy, got %q", s.UpdateProxy)
+	}
+	if !s.DenyUnmatched {
+		t.Error("expected deny_unmatched to be kept")
+	}
+	if len(s.PortalOrigins) != 1 || s.PortalOrigins[0] != "https://portal.example.com" {
+		t.Errorf("expected the portal origins to be kept, got %q", s.PortalOrigins)
+	}
+	if s.PortalAPIBase != "https://dns.example.com:3004" {
+		t.Errorf("expected the portal API address to be kept, got %q", s.PortalAPIBase)
+	}
+}
+
+func TestPortalAPIBasePersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "users.json")
+
+	newMgr := func() (m *Manager) {
+		t.Helper()
+
+		var err error
+		m, err = New(&Config{Logger: testLogger(), Path: path})
+		if err != nil {
+			t.Fatalf("creating manager: %v", err)
+		}
+
+		return m
+	}
+
+	m := newMgr()
+
+	err := m.SetSettings(&Settings{PortalAPIBase: "https://dns.example.com:3004"})
+	if err != nil {
+		t.Fatalf("setting settings: %v", err)
+	}
+
+	err = m.Close()
+	if err != nil {
+		t.Fatalf("closing manager: %v", err)
+	}
+
+	reopened := newMgr()
+	if got := reopened.GetSettings().PortalAPIBase; got != "https://dns.example.com:3004" {
+		t.Errorf("expected the portal API address to survive a restart, got %q", got)
+	}
+}
+
+func TestSettingsReqKeepsAbsentFields(t *testing.T) {
+	cur := &Settings{
+		DenyUnmatched: false,
+		PortalOrigins: []string{"https://portal.example.com"},
+		PortalAPIBase: "https://dns.example.com:3004",
+	}
+
+	// A caller that only flips the gate must not clear the portal settings.
+	on := true
+	got := (&settingsReq{DenyUnmatched: &on}).applyTo(cur)
+
+	if !got.DenyUnmatched {
+		t.Error("expected deny_unmatched to be applied")
+	}
+	if len(got.PortalOrigins) != 1 || got.PortalOrigins[0] != "https://portal.example.com" {
+		t.Errorf("expected the portal origins to be kept, got %q", got.PortalOrigins)
+	}
+	if got.PortalAPIBase != "https://dns.example.com:3004" {
+		t.Errorf("expected the portal API address to be kept, got %q", got.PortalAPIBase)
+	}
+
+	// An explicitly empty value is a value, not an absent field.
+	empty := ""
+	got = (&settingsReq{PortalAPIBase: &empty}).applyTo(cur)
+	if got.PortalAPIBase != "" {
+		t.Errorf("expected the portal API address to be cleared, got %q", got.PortalAPIBase)
+	}
+}

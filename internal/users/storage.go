@@ -62,10 +62,12 @@ func (m *Manager) load() (err error) {
 	}
 
 	if state.Settings != nil {
-		m.settings.Store(&Settings{
-			DenyUnmatched: state.Settings.DenyUnmatched,
-			UpdateProxy:   state.Settings.UpdateProxy,
-		})
+		// Store the decoded settings whole.  Rebuilding them field by field
+		// drops every field that is not named here, which is how the portal
+		// origins were lost on every restart.
+		s := *state.Settings
+		s.PortalOrigins = slices.Clone(s.PortalOrigins)
+		m.settings.Store(&s)
 	}
 
 	for _, u := range state.Users {

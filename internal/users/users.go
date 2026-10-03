@@ -259,6 +259,13 @@ type Settings struct {
 	// can use the portal, which is the safest default.  It is not related to
 	// users; it lives here because this is the AGHub-wide settings store.
 	PortalOrigins []string `json:"portal_origins,omitempty"`
+
+	// PortalAPIBase is the address of the portal API as the browser reaches
+	// it, for example "https://dns.example.com:3004".  It is baked into the
+	// deployment package of the portal front-end, which is served from a
+	// different origin.  When it is empty, the front-end talks to the origin
+	// it was served from.
+	PortalAPIBase string `json:"portal_api_base,omitempty"`
 }
 
 // Config is the configuration of a Manager.
@@ -945,6 +952,7 @@ func (m *Manager) GetSettings() (s *Settings) {
 
 	return &Settings{
 		PortalOrigins: slices.Clone(cur.PortalOrigins),
+		PortalAPIBase: cur.PortalAPIBase,
 		DenyUnmatched: cur.DenyUnmatched,
 		UpdateProxy:   cur.UpdateProxy,
 	}
@@ -958,6 +966,7 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 
 	m.settings.Store(&Settings{
 		PortalOrigins: slices.Clone(s.PortalOrigins),
+		PortalAPIBase: s.PortalAPIBase,
 		DenyUnmatched: s.DenyUnmatched,
 		UpdateProxy:   s.UpdateProxy,
 	})
@@ -977,10 +986,11 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 func (m *Manager) SetUpdateProxy(prefix string) (err error) {
 	cur := m.GetSettings()
 
-	m.settings.Store(&Settings{
-		DenyUnmatched: cur.DenyUnmatched,
-		UpdateProxy:   prefix,
-	})
+	// Store the whole settings, not just the two fields this call is about:
+	// a fresh struct would silently drop the portal origins and the portal
+	// API address.
+	cur.UpdateProxy = prefix
+	m.settings.Store(cur)
 	m.dirty.Store(true)
 
 	m.logger.Info("online update proxy updated", "proxy", prefix)
