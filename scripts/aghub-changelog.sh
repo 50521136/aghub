@@ -25,11 +25,15 @@ version="${1}"
 repo="${2:-${GITHUB_REPOSITORY:-}}"
 
 # The tag of the previous release.  The tag of this version may not exist yet
-# when the workflow is run by hand, so the parent commit is used as the anchor.
+# when the script is run by hand, so the parent commit is used as the anchor and
+# HEAD becomes the end of the range.  Using the missing tag as the end of the
+# range instead would make git log fail and silently produce empty notes.
 prev=''
+head='HEAD'
 
 if git rev-parse --verify --quiet "${version}^{commit}" > /dev/null; then
 	anchor="${version}^"
+	head="${version}"
 else
 	anchor='HEAD'
 fi
@@ -39,9 +43,9 @@ if ! prev="$(git describe --tags --abbrev=0 --match 'v*' "${anchor}" 2> /dev/nul
 fi
 
 if [ -n "${prev}" ] && [ "${prev}" != "${version}" ]; then
-	range="${prev}..${version}"
+	range="${prev}..${head}"
 else
-	range="${version}"
+	range="${head}"
 	prev=''
 fi
 
