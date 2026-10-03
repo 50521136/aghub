@@ -201,6 +201,29 @@ func TestUsageHistorySurvivesRestartWithinADay(t *testing.T) {
 	assert.Equal(t, int64(5), history[0].Requests)
 }
 
+func TestUsageHistoryMarksTheStateForSaving(t *testing.T) {
+	m, now := newTestManager(t)
+
+	addTestUser(t, m, "alice")
+	queryUser(t, m, "alice", 3)
+
+	// The request path marks the manager dirty on its own, so clear the flag to
+	// see what the rotation does by itself.
+	m.dirty.Store(false)
+	flushHistory(m, *now)
+
+	// Adopting the day is a change to the state.  An idle user still gets a
+	// bucket written for the day that ended, so the rotation cannot rely on a
+	// DNS request to trigger the save.
+	assert.True(t, m.dirty.Load(), "the day adoption must mark the state dirty")
+
+	// Nothing is left to rotate within the same day, so a second flush must be
+	// a no-op instead of keeping the state dirty forever.
+	m.dirty.Store(false)
+	flushHistory(m, *now)
+	assert.False(t, m.dirty.Load(), "a no-op flush must not mark the state dirty")
+}
+
 // TestUsageHistoryConcurrentAccess makes sure that the readers of the history
 // do not race with the background flusher.  It is meant to be run with the
 // race detector enabled.

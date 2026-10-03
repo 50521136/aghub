@@ -608,6 +608,12 @@ func (m *Manager) flushHistoryLocked(now time.Time) {
 		// the counter: the requests that were already counted happened within
 		// this flush interval, so they belong to this bucket.
 		e.dayStart.Store(today)
+
+		// The rotation changed the state, and no DNS request has to arrive for
+		// it to need saving: an idle user still gets a bucket written for the
+		// day that ended.  Without this the entry stays in memory only and is
+		// lost if the process does not shut down cleanly.
+		m.dirty.Store(true)
 	}
 }
 
