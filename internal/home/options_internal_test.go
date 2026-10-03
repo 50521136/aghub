@@ -90,6 +90,23 @@ func TestParseBindPort(t *testing.T) {
 	testParseErr(t, "port too high", "-p", "18446744073709551617") // 2^64 + 1
 }
 
+func TestParsePortalAddr(t *testing.T) {
+	wantAddrPort := netip.MustParseAddrPort("127.0.0.1:3004")
+
+	// The portal is served as a path of the web UI unless an address of its
+	// own is given, so an invalid address must be the zero value.
+	assert.Zero(t, testParseOK(t).portalAddr, "empty is not portal-addr")
+
+	assert.Equal(t, wantAddrPort, testParseOK(t, "--portal-addr", "127.0.0.1:3004").portalAddr)
+	assert.Equal(t, netip.MustParseAddrPort("1.2.3.4:0"), testParseOK(t, "--portal-addr", "1.2.3.4:0").portalAddr)
+	testParseParamMissing(t, "-portal-addr")
+
+	testParseErr(t, "not an int", "--portal-addr", "1.2.3.4:x")
+	testParseErr(t, "hex not supported", "--portal-addr", "1.2.3.4:0x100")
+	testParseErr(t, "port negative", "--portal-addr", "1.2.3.4:-1")
+	testParseErr(t, "port too high", "--portal-addr", "1.2.3.4:65536")
+}
+
 func TestParseBindAddr(t *testing.T) {
 	wantAddrPort := netip.MustParseAddrPort("1.2.3.4:8089")
 

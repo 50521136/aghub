@@ -53,6 +53,10 @@ type options struct {
 	// bindAddr is the address to serve the web UI on.
 	bindAddr netip.AddrPort
 
+	// portalAddr is the address to serve the user portal on.  When it is
+	// invalid, the portal is served as a path of the web UI.
+	portalAddr netip.AddrPort
+
 	// checkConfig is true if the current invocation is only required to check
 	// the configuration file and exit.
 	checkConfig bool
@@ -205,6 +209,23 @@ var cmdLineOpts = []cmdLineOpt{{
 	description: "Address to serve the web UI on, in the host:port format.",
 	longName:    "web-addr",
 	shortName:   "",
+}, {
+	updateWithValue: func(o options, v string) (oo options, err error) {
+		o.portalAddr, err = netip.ParseAddrPort(v)
+
+		return o, err
+	},
+	updateNoValue: nil,
+	effect:        nil,
+	serialize: func(o options) (val string, ok bool) {
+		return o.portalAddr.String(), o.portalAddr.IsValid()
+	},
+	description: `Address to serve the user portal on, in the host:port ` +
+		`format.  When empty, the portal is served as a path of the ` +
+		`web UI.  Setting it moves the portal, including its API, to a ` +
+		`listener of its own.`,
+	longName:  "portal-addr",
+	shortName: "",
 }, {
 	updateWithValue: func(o options, v string) (options, error) {
 		o.serviceControlAction = v

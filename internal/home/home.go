@@ -653,6 +653,14 @@ type webConfig struct {
 	// must not be nil.
 	mux *http.ServeMux
 
+	// portalAddr is the address to serve the user portal on.  When it is
+	// invalid, the portal is served as a path of the web UI instead.
+	portalAddr netip.AddrPort
+
+	// portalMux serves the user portal on a listener of its own.  It is only
+	// used when portalAddr is valid.
+	portalMux *http.ServeMux
+
 	// hostsContainer is used for DNS initialization on updates.
 	hostsContainer *aghnet.HostsContainer
 
@@ -699,6 +707,8 @@ func newWeb(ctx context.Context, conf *webConfig) (web *webAPI, err error) {
 	disableUpdate := !isUpdateEnabled(ctx, conf.baseLogger, &conf.opts, conf.isCustomUpdURL)
 
 	webConf := &webAPIConfig{
+		PortalAddr:         conf.portalAddr,
+		PortalMux:          conf.portalMux,
 		CommandConstructor: executil.SystemCommandConstructor{},
 		updater:            conf.updater,
 		logger:             logger,
@@ -866,7 +876,14 @@ func run(
 
 	confModifier.setAuth(auth)
 
+	// The portal can be served on a listener of its own, which keeps its
+	// attack surface away from the administrator interface.  When no address
+	// is configured it stays a path of the administrator one.
+	portalMux := http.NewServeMux()
+
 	conf := &webConfig{
+		portalAddr:     opts.portalAddr,
+		portalMux:      portalMux,
 		clientBuildFS:  clientBuildFS,
 		updater:        upd,
 		opts:           opts,
@@ -903,7 +920,14 @@ func run(
 		// the paths below /portal/ are treated as public by the global
 		// authentication middleware, because the portal authenticates on its
 		// own.
-		err = initPortal(ctx, baseLogger, aghhttp.NewPlainRegistrar(mux), workDir)
+		portalReg := mux
+		if opts.portalAddr.IsValid() {
+			// The portal has a listener of its own, so it must not be
+			// reachable through the web UI as well.
+			portalReg = portalMux
+		}
+
+		err = initPortal(ctx, baseLogger, aghhttp.NewPlainRegistrar(portalReg), workDir)
 		fatalOnError(ctx, baseLogger, err)
 
 		doHSrv := newDoHServer(&doHServerConfig{

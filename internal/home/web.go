@@ -80,6 +80,14 @@ type webAPIConfig struct {
 	// must not be nil.
 	mux *http.ServeMux
 
+	// PortalAddr is the address to serve the user portal on.  When it is
+	// invalid, the portal is served as a path of the web UI instead.
+	PortalAddr netip.AddrPort
+
+	// PortalMux serves the user portal on a listener of its own.  It is only
+	// used when PortalAddr is valid.
+	PortalMux *http.ServeMux
+
 	// hostsContainer is used for DNS initialization on updates.
 	hostsContainer *aghnet.HostsContainer
 
@@ -211,6 +219,10 @@ type webAPI struct {
 
 	// TODO(a.garipov): Refactor all these servers.
 	httpServer *http.Server
+
+	// portalServer is the server that handles the user portal on its own
+	// address.  It is nil when the portal is served as a path of the web UI.
+	portalServer *http.Server
 
 	// logger is a slog logger used in webAPI. It must not be nil.
 	logger *slog.Logger
@@ -354,6 +366,8 @@ func (web *webAPI) start(ctx context.Context) {
 		web.tlsServerLoop(ctx)
 	}()
 
+	web.startPortalServer(ctx)
+
 	// This loop is used as an ability to change listening host and/or port.
 	for !web.httpsServer.inShutdown() {
 		printHTTPAddresses(ctx, web.logger)
@@ -395,6 +409,40 @@ func (web *webAPI) start(ctx context.Context) {
 		// We use ErrServerClosed as a sign that we need to rebind on a new
 		// address, so go back to the start of the loop.
 	}
+}
+
+// startPortalServer starts the user portal on its own address when one is
+// configured.  The portal authenticates on its own, so the administrator
+// middleware is deliberately not applied to it.
+func (web *webAPI) startPortalServer(ctx context.Context) {
+	addr := web.conf.PortalAddr
+	if !addr.IsValid() {
+		return
+	}
+
+	logger := web.baseLogger.With(loggerKeyServer, "portal")
+	h := httputil.Wrap(web.conf.PortalMux, httputil.MiddlewareFunc(limitRequestBody))
+	h = httputil.NewLogMiddleware(logger, slog.LevelDebug).Wrap(h)
+
+	web.portalServer = &http.Server{
+		Addr:              addr.String(),
+		Handler:           h,
+		ReadTimeout:       web.conf.ReadTimeout,
+		ReadHeaderTimeout: web.conf.ReadHeaderTimeout,
+		WriteTimeout:      web.conf.WriteTimeout,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
+
+	go func() {
+		defer slogutil.RecoverAndExit(ctx, logger, osutil.ExitCodeFailure)
+
+		logger.InfoContext(ctx, "starting portal server", "addr", addr.String())
+
+		err := web.portalServer.ListenAndServe()
+		if !errors.Is(err, http.ErrServerClosed) {
+			panic(err)
+		}
+	}()
 }
 
 // setDoHServer sets the DoH server, the routes of which are served by the
@@ -456,6 +504,7 @@ func (web *webAPI) close(ctx context.Context) {
 	shutdownSrv(ctx, web.logger, web.httpsServer.server)
 	shutdownSrv3(ctx, web.logger, web.httpsServer.server3)
 	shutdownSrv(ctx, web.logger, web.httpServer)
+	shutdownSrv(ctx, web.logger, web.portalServer)
 
 	if web.auth != nil {
 		web.auth.close(ctx)
