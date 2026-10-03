@@ -61,12 +61,20 @@ jobs:
           SKIP_JS: '1'
         run: bash ./scripts/aghub-release.sh
 
+      - name: Generate the release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash ./scripts/aghub-changelog.sh "${VERSION}" "${GITHUB_REPOSITORY}" > notes.md
+          echo '--- notes.md ---'
+          cat notes.md
+
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: AGHub ${{ steps.version.outputs.version }}
-          generate_release_notes: true
+          body_path: notes.md
           files: |
             dist-aghub/*.tar.gz
             dist-aghub/*.zip
