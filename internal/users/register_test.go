@@ -334,3 +334,98 @@ func TestRegisterLeavesNothingBehindWhenThePasswordFails(t *testing.T) {
 		t.Errorf("expected no users to be left behind, got %d", n)
 	}
 }
+
+// TestFindByLoginByEmail checks that a user can sign in with the address they
+// signed up with, in any casing, and that a name shared by two users is still
+// refused while an address is not.
+func TestFindByLoginByEmail(t *testing.T) {
+	m, _ := newTestManager(t)
+	defer m.Close()
+
+	if err := m.SetSettings(&Settings{}); err != nil {
+		t.Fatalf("setting up: %v", err)
+	}
+
+	eve, err := m.Register(&RegisterParams{
+		Name:     "Eve",
+		Password: "localpass123",
+		Email:    "eve@example.com",
+	})
+	if err != nil {
+		t.Fatalf("registering Eve: %v", err)
+	}
+
+	bob, err := m.Register(&RegisterParams{
+		Name:     "Bob",
+		Password: "localpass123",
+		Email:    "bob@example.com",
+	})
+	if err != nil {
+		t.Fatalf("registering Bob: %v", err)
+	}
+
+	// A second account with the same name, which makes the name ambiguous.
+	_, err = m.Add(&AddParams{Name: "Eve", IDs: []string{"eveid2"}})
+	if err != nil {
+		t.Fatalf("adding the second Eve: %v", err)
+	}
+
+	testCases := []struct {
+		name  string
+		login string
+		want  string
+	}{{
+		name:  "by_uid",
+		login: eve.UID,
+		want:  eve.UID,
+	}, {
+		name:  "by_id",
+		login: eve.UID,
+		want:  eve.UID,
+	}, {
+		name:  "by_email",
+		login: "eve@example.com",
+		want:  eve.UID,
+	}, {
+		name:  "by_email_uppercase",
+		login: "EVE@Example.COM",
+		want:  eve.UID,
+	}, {
+		name:  "by_email_padded",
+		login: "  eve@example.com  ",
+		want:  eve.UID,
+	}, {
+		name:  "the_other_account",
+		login: "bob@example.com",
+		want:  bob.UID,
+	}, {
+		name:  "ambiguous_name_refused",
+		login: "Eve",
+		want:  "",
+	}, {
+		name:  "unknown",
+		login: "nobody@example.com",
+		want:  "",
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := m.FindByLogin(tc.login)
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("expected no user, got %q", got.UID)
+				}
+
+				return
+			}
+
+			if got == nil {
+				t.Fatalf("expected %q, got no user", tc.want)
+			}
+
+			if got.UID != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got.UID)
+			}
+		})
+	}
+}

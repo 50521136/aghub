@@ -1633,8 +1633,9 @@ func (m *Manager) HasPortalPassword(uid string) (ok bool) {
 }
 
 // FindByLogin returns the user matching the given portal login, or nil.  The
-// login is matched against the identifiers first, since they are unique, and
-// then against the name, which is only used when it is unambiguous.
+// login is matched against the identifiers first, since they are unique, then
+// against the e-mail address, which is unique as well, and finally against the
+// name, which is only used when it is unambiguous.
 //
 // The comparison is case-insensitive, because the identifiers are host name
 // labels and the users type them by hand.
@@ -1654,6 +1655,13 @@ func (m *Manager) FindByLogin(login string) (u *User) {
 			if strings.ToLower(id) == login {
 				return def
 			}
+		}
+
+		// The e-mail address is stored normalised, so a direct comparison is
+		// enough.  It is matched before the name because it is unique while
+		// the name is not.
+		if def.Email != "" && def.Email == login {
+			return def
 		}
 
 		if strings.ToLower(def.Name) == login {

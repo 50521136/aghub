@@ -324,7 +324,7 @@ func TestRegister(t *testing.T) {
 	m, _ := newTestPortal(t, store)
 
 	rec := post(t, m.handleRegister, "/portal/api/register",
-		`{"name":"Eve","password":"localpass123"}`)
+		`{"name":"Eve","email":"Eve@Example.COM","password":"localpass123"}`)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
@@ -338,12 +338,83 @@ func TestRegister(t *testing.T) {
 	assert.Equal(t, []string{resp.User.UID}, resp.User.IDs)
 	assert.Equal(t, int64(50), resp.User.RequestLimit)
 
+	// The address is stored normalised, so signing in with any casing works.
+	assert.Equal(t, "eve@example.com", resp.User.Email)
+
 	// Signing up signs in, so the response carries a session.
 	assert.NotEmpty(t, rec.Result().Cookies())
 
-	// The new account can sign in again with the password it chose.
+	// The new account can sign in again with the password it chose, by
+	// identifier or by address.
 	_, err := m.Login(t.Context(), resp.User.UID, "localpass123", testIP)
 	assert.NoError(t, err)
+
+	_, err = m.Login(t.Context(), "eve@example.com", "localpass123", testIP)
+	assert.NoError(t, err)
+
+	_, err = m.Login(t.Context(), "EVE@Example.com", "localpass123", testIP)
+	assert.NoError(t, err)
+}
+
+// TestRegisterRequiresNameAndEmail checks that the two fields that identify an
+// account to a human are always required, whatever the verification switch
+// says.  The switch only decides whether the address has to be proved.
+func TestRegisterRequiresNameAndEmail(t *testing.T) {
+	testCases := []struct {
+		name string
+		body string
+	}{{
+		name: "no_name",
+		body: `{"email":"eve@example.com","password":"localpass123"}`,
+	}, {
+		name: "blank_name",
+		body: `{"name":"   ","email":"eve@example.com","password":"localpass123"}`,
+	}, {
+		name: "no_email",
+		body: `{"name":"Eve","password":"localpass123"}`,
+	}, {
+		name: "blank_email",
+		body: `{"name":"Eve","email":"  ","password":"localpass123"}`,
+	}, {
+		name: "malformed_email",
+		body: `{"name":"Eve","email":"not-an-address","password":"localpass123"}`,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newTestStore()
+			store.settings = &users.Settings{PortalOpen: true}
+			m, _ := newTestPortal(t, store)
+
+			before := len(store.defs)
+
+			rec := post(t, m.handleRegister, "/portal/api/register", tc.body)
+
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Len(t, store.defs, before)
+		})
+	}
+}
+
+// TestRegisterWithoutVerificationStillKeepsTheEmail checks that turning the
+// verification switch off makes the code optional but does not throw the
+// address away: it is still stored, just unproved.
+func TestRegisterWithoutVerificationStillKeepsTheEmail(t *testing.T) {
+	store := newTestStore()
+	store.settings = &users.Settings{PortalOpen: true, PortalEmailVerify: false}
+	m, _ := newTestPortal(t, store)
+
+	rec := post(t, m.handleRegister, "/portal/api/register",
+		`{"name":"Eve","email":"eve@example.com","password":"localpass123"}`)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp loginResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.NotNil(t, resp.User)
+
+	assert.Equal(t, "eve@example.com", resp.User.Email)
+	assert.False(t, resp.User.EmailVerified)
 }
 
 func TestRegisterRejectsAShortPassword(t *testing.T) {

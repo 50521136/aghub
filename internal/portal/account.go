@@ -303,6 +303,22 @@ func (m *Manager) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The name and the address are what identify the account to a human, so
+	// they are required whatever the verification switch says.  The switch
+	// only decides whether the address has to be *proved*.
+	if strings.TrimSpace(req.Name) == "" {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "name is empty")
+
+		return
+	}
+
+	email, err := users.NormalizeEmail(req.Email)
+	if err != nil || email == "" {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "%s", ErrInvalidEmail)
+
+		return
+	}
+
 	verified := false
 	if s.PortalEmailVerify {
 		if !s.MailConfig().IsConfigured() {
@@ -326,7 +342,7 @@ func (m *Manager) handleRegister(w http.ResponseWriter, r *http.Request) {
 	u, err := m.users.Register(&users.RegisterParams{
 		Name:          req.Name,
 		Password:      req.Password,
-		Email:         req.Email,
+		Email:         email,
 		EmailVerified: verified,
 	})
 	if err != nil {

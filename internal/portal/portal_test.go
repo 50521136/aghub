@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,18 +48,35 @@ type testUserStore struct {
 // type check
 var _ UserStore = (*testUserStore)(nil)
 
-// FindByLogin implements the [UserStore] interface.
+// FindByLogin implements the [UserStore] interface.  It mirrors the real
+// lookup: identifiers first, then the e-mail address, then the name.
 func (s *testUserStore) FindByLogin(login string) (u *users.User) {
+	login = strings.ToLower(strings.TrimSpace(login))
+
+	var byName []*users.User
+
 	for _, def := range s.defs {
-		if def.Name == login || def.UID == login {
+		if def.UID == login {
 			return def
 		}
 
 		for _, id := range def.IDs {
-			if id == login {
+			if strings.ToLower(id) == login {
 				return def
 			}
 		}
+
+		if def.Email != "" && strings.ToLower(def.Email) == login {
+			return def
+		}
+
+		if strings.ToLower(def.Name) == login {
+			byName = append(byName, def)
+		}
+	}
+
+	if len(byName) == 1 {
+		return byName[0]
 	}
 
 	return nil
