@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="same-origin">
+<title>我的 DNS 账号</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #fff; --fg: #1b1d22; --muted: #6b7280;
+  --line: #e3e5ea; --accent: #2f6feb; --accent-fg: #fff; --bad: #d1242f;
+  --good: #1a7f37; --warn: #9a6700; --track: #eceef2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d; --card: #1e2127; --fg: #e6e8ec; --muted: #9aa1ad;
+    --line: #2c3038; --accent: #4c8dff; --accent-fg: #0d1117; --bad: #f85149;
+    --good: #3fb950; --warn: #d29922; --track: #2c3038;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); min-height: 100vh;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding: 16px calc(14px + env(safe-area-inset-right))
+           calc(48px + env(safe-area-inset-bottom))
+           calc(14px + env(safe-area-inset-left));
+}
+h1 { font-size: 19px; margin: 0; font-weight: 650; }
+h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600;
+     letter-spacing: .02em; }
+.card { background: var(--card); border: 1px solid var(--line);
+        border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.tiny { font-size: 12px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+button {
+  font: inherit; border: 1px solid var(--line); background: var(--card);
+  color: var(--fg); border-radius: 9px; padding: 9px 14px; cursor: pointer;
+  min-height: 40px;
+}
+button.primary { background: var(--accent); border-color: var(--accent);
+                 color: var(--accent-fg); font-weight: 600; }
+button:disabled { opacity: .55; cursor: default; }
+button.wide { width: 100%; }
+input {
+  font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg);
+  min-height: 42px;
+}
+label { display: block; margin-bottom: 12px; }
+label > span { display: block; margin-bottom: 5px; font-size: 13px;
+               color: var(--muted); }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); cursor: pointer; font-size: 13px;
+}
+.chip .host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.copied { border-color: var(--good); color: var(--good); }
+.bar { height: 6px; border-radius: 3px; background: var(--track);
+       overflow: hidden; margin: 8px 0 4px; }
+.bar > i { display: block; height: 100%; background: var(--accent);
+           border-radius: 3px; transition: width .3s; }
+.bar.over > i { background: var(--bad); }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px;
+         border: 1px solid var(--line); }
+.badge.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.badge.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.badge.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+/* 固定 30 个槽位，缺失的日子画成空槽，柱子有宽度上限：即使只有一天数据，
+   也能看出它在时间轴上的位置，而不是一根占满宽度的色块。 */
+.spark { display: flex; align-items: flex-end; justify-content: flex-start;
+         gap: 2px; height: 44px; margin-top: 6px;
+         border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+/* 每格是一条通高的淡底轨道，填充从底部往上画。轨道让 30 个格子一眼能数出
+   来，而"填充高度 = 当天用量"不会把没数据的日子误读成有用量。 */
+.spark > span { flex: 1 1 0; max-width: 16px; height: 100%;
+                background: var(--track); opacity: .6; border-radius: 3px;
+                display: flex; align-items: flex-end; overflow: hidden; }
+.spark > span > i { display: block; width: 100%; height: 0;
+                    background: var(--accent); border-radius: 3px; }
+.spark > span.today { outline: 1px solid var(--accent); outline-offset: 1px; }
+.axis { display: flex; justify-content: space-between; margin-top: 4px;
+        font-size: 11px; color: var(--muted); }
+/* 日志用 flex 行而不是 table：table 的 table-layout:auto 会让
+   text-overflow: ellipsis 失效，超长域名会被硬切掉。 */
+.logrow { display: flex; gap: 10px; align-items: flex-start;
+          padding: 8px 0; border-top: 1px solid var(--line); }
+.logrow:first-child { border-top: 0; }
+.logrow > .badge { flex: 0 0 auto; margin-top: 1px; }
+.logmain { flex: 1 1 auto; min-width: 0; }
+.logmain .host { font-size: 14px; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+.logmain .meta { font-size: 12px; color: var(--muted); margin-top: 2px;
+                 overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+tr:first-child td { border-top: 0; }
+.host { overflow-wrap: anywhere; }
+/* 元信息用 flex-wrap 排版，分隔符由 CSS 前缀生成并跟随它后面的那一项，
+   这样换行时不会在行尾留下一个孤立的"·"。 */
+.metarow { display: flex; flex-wrap: wrap; column-gap: 0; row-gap: 2px; }
+.metarow > span { white-space: nowrap; }
+.metarow > span + span::before { content: " · "; }
+
+.alert { border-radius: 9px; padding: 10px 12px; margin-bottom: 12px;
+         font-size: 13px; display: none; }
+.alert.show { display: block; }
+.alert.err { background: color-mix(in srgb, var(--bad) 14%, transparent);
+             color: var(--bad); }
+.hidden { display: none !important; }
+.center { text-align: center; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+       font-size: 12px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 登录 -->
+  <section id="login-view">
+    <div class="row" style="margin:18px 0 16px">
+      <h1 id="login-title">我的 DNS 账号</h1>
+    </div>
+    <div class="card">
+      <div id="login-alert" class="alert err"></div>
+      <form id="login-form" autocomplete="on">
+        <label>
+          <span>标识或名称</span>
+          <input id="login-name" name="username" autocomplete="username"
+                 autocapitalize="none" autocorrect="off" spellcheck="false"
+                 required>
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="login-pass" name="password" type="password"
+                 autocomplete="current-password" required>
+        </label>
+        <button id="login-btn" class="primary wide" type="submit">登录</button>
+      </form>
+    </div>
+    <p class="tiny muted center" id="login-hint"></p>
+  </section>
+
+  <!-- 面板 -->
+  <section id="panel-view" class="hidden">
+    <div class="row spread" style="margin:16px 0 14px">
+      <h1 id="account-name">我的账号</h1>
+      <button id="logout-btn" class="small">退出</button>
+    </div>
+    <div id="panel-alert" class="alert err"></div>
+
+    <div class="card">
+      <h2>连接信息</h2>
+      <div id="hosts" class="row"></div>
+      <p class="tiny muted" id="hosts-hint" style="margin:10px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <h2>用量与配额</h2>
+      <div class="row spread">
+        <span id="usage-text" class="mono">—</span>
+        <span id="status-badge" class="badge">—</span>
+      </div>
+      <div class="bar" id="usage-bar"><i style="width:0"></i></div>
+      <p class="tiny muted" id="reset-hint" style="margin:0"></p>
+    </div>
+
+    <div class="card" id="history-card">
+      <h2>近 30 天用量</h2>
+      <div class="spark" id="spark"></div>
+      <div class="axis">
+        <span id="axis-start"></span>
+        <span id="axis-end"></span>
+      </div>
+      <p class="tiny muted" id="history-hint" style="margin:8px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <h2>查询日志</h2>
+      <div class="row" style="margin-bottom:10px">
+        <input id="log-term" placeholder="按域名筛选，留空看全部"
+               autocapitalize="none" autocorrect="off" spellcheck="false"
+               style="flex:1;min-width:180px">
+        <button id="log-refresh">刷新</button>
+      </div>
+      <div id="log-body"><p class="small muted">加载中…</p></div>
+      <div class="row" style="margin-top:10px">
+        <button id="log-more" class="wide small hidden">加载更多</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+
+// API_BASE 留空表示与页面同源。独立部署（前端在国外、API 在国内）时改成
+// 国内 API 的地址，例如 "https://dns.example.com"。同时必须把该页面的来源
+// 加进管理端设置里的「门户来源」，否则浏览器会拦下跨域请求。
+var API_BASE = "";
+
+var PAGE_SIZE = 100;
+var MAX_KEPT = 1000;
+
+var $ = function (id) { return document.getElementById(id); };
+
+function api(path, opts) {
+  opts = opts || {};
+  return fetch(API_BASE + path, {
+    method: opts.method || "GET",
+    headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    credentials: "include",
+    cache: "no-store",
+  });
+}
+
+function showAlert(el, msg) {
+  el.textContent = msg || "";
+  el.classList.toggle("show", !!msg);
+}
+
+function fmtDate(sec) {
+  if (!sec) { return "—"; }
+  var d = new Date(sec * 1000);
+  var p = function (n) { return (n < 10 ? "0" : "") + n; };
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+    " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+function fmtLeft(sec) {
+  if (sec == null || sec < 0) { return "永久"; }
+  if (sec === 0) { return "已到期"; }
+  var d = Math.floor(sec / 86400);
+  if (d >= 1) { return d + " 天"; }
+  var h = Math.floor(sec / 3600);
+  if (h >= 1) { return h + " 小时"; }
+  return Math.max(1, Math.floor(sec / 60)) + " 分钟";
+}
+
+var STATUS = {
+  active: ["正常", "ok"],
+  disabled: ["已停用", "bad"],
+  expired: ["已到期", "bad"],
+  over_quota: ["已超额", "bad"],
+  expiring_soon: ["即将到期", "warn"],
+};
+
+/* ---------- 登录 ---------- */
+
+function showLogin(msg) {
+  $("panel-view").classList.add("hidden");
+  $("login-view").classList.remove("hidden");
+  showAlert($("login-alert"), msg);
+}
+
+function showPanel() {
+  $("login-view").classList.add("hidden");
+  $("panel-view").classList.remove("hidden");
+}
+
+$("login-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var btn = $("login-btn");
+  btn.disabled = true;
+  showAlert($("login-alert"), "");
+
+  api("/portal/api/login", {
+    method: "POST",
+    body: { login: $("login-name").value, password: $("login-pass").value },
+  }).then(function (r) {
+    if (r.ok) { return r.json(); }
+    if (r.status === 401) { throw new Error("标识或密码不对"); }
+    if (r.status === 429) { throw new Error("尝试太频繁，请过一会儿再试"); }
+    throw new Error("登录失败（HTTP " + r.status + "）");
+  }).then(function (d) {
+    $("login-pass").value = "";
+    showPanel();
+    renderUser(d.user);
+    return loadLog(true);
+  }).catch(function (err) {
+    showAlert($("login-alert"), err.message);
+  }).finally(function () {
+    btn.disabled = false;
+  });
+});
+
+$("logout-btn").addEventListener("click", function () {
+  api("/portal/api/logout", { method: "POST" }).finally(function () {
+    log = [];
+    showLogin("已退出");
+  });
+});
+
+/* ---------- 账号 ---------- */
+
+function renderUser(u) {
+  if (!u) { return; }
+  $("account-name").textContent = u.name || u.uid;
+
+  // 连接信息
+  var hosts = $("hosts");
+  hosts.textContent = "";
+  var list = u.hosts || [];
+  if (list.length === 0) {
+    hosts.innerHTML = '<span class="small muted">' +
+      "你的账号是按来源地址识别的，直接用管理员给你的 DNS 地址即可，" +
+      "不需要在客户端里填写主机名。" + "</span>";
+  }
+  list.forEach(function (h) {
+    var el = document.createElement("button");
+    el.className = "chip";
+    el.type = "button";
+    el.title = "点击复制";
+    el.innerHTML = '<span class="host mono"></span><span class="tiny">复制</span>';
+    el.querySelector(".host").textContent = h;
+    el.addEventListener("click", function () {
+      copy(h, el);
+    });
+    hosts.appendChild(el);
+  });
+  $("hosts-hint").textContent = (u.domain && list.length > 0)
+    ? "DoT 主机名就是上面这些；DoH 地址在主机名后加 /dns-query。"
+    : "";
+
+  // 用量与配额
+  var used = u.requests || 0;
+  var limit = u.request_limit;
+  var unlimited = !limit || limit < 0;
+  $("usage-text").textContent = unlimited
+    ? used.toLocaleString() + " 次（不限量）"
+    : used.toLocaleString() + " / " + limit.toLocaleString();
+
+  var bar = $("usage-bar");
+  var pct = unlimited ? 0 : Math.min(100, Math.round(used / limit * 100));
+  bar.querySelector("i").style.width = (unlimited ? 100 : pct) + "%";
+  bar.classList.toggle("over", !unlimited && used >= limit);
+
+  var st = STATUS[u.status] || [u.status || "未知", ""];
+  var badge = $("status-badge");
+  badge.textContent = st[0];
+  badge.className = "badge " + st[1];
+
+  // 每一项都是不可断行的整体，窄屏上换行也不会把"永久"这类词拆开。
+  var parts = [];
+  parts.push("周期：" + (u.period === "day" ? "每天" : u.period === "week"
+    ? "每周" : u.period === "month" ? "每月" : "总量"));
+  if (u.next_reset) { parts.push("下次重置：" + fmtDate(u.next_reset)); }
+  if (u.expires_at) { parts.push("到期：" + fmtDate(u.expires_at)); }
+  parts.push("有效期剩余：" + fmtLeft(u.remaining_seconds));
+
+  var hint = $("reset-hint");
+  hint.className = "tiny muted metarow";
+  hint.style.margin = "0";
+  hint.textContent = "";
+  parts.forEach(function (t) {
+    var sp = document.createElement("span");
+    sp.textContent = t;
+    hint.appendChild(sp);
+  });
+
+  renderHistory(u.history, u);
+}
+
+function copy(text, el) {
+  var done = function () {
+    el.classList.add("copied");
+    var t = el.querySelector(".tiny");
+    if (t) { t.textContent = "已复制"; }
+    setTimeout(function () {
+      el.classList.remove("copied");
+      if (t) { t.textContent = "复制"; }
+    }, 1400);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+  } else {
+    fallback();
+  }
+  function fallback() {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) { /* 忽略 */ }
+    document.body.removeChild(ta);
+  }
+}
+
+var HISTORY_DAYS = 30;
+
+function fmtDay(d) {
+  var p = function (n) { return (n < 10 ? "0" : "") + n; };
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+// 固定画出 30 个槽位，缺失的日子留空槽。服务端只在有活动之后才开始记历史，
+// 所以新用户一开始只有一天数据；如果按"有几天画几根"，一天就会被拉成一整块
+// 色块，看不出任何时间位置。
+function renderHistory(history, u) {
+  var spark = $("spark");
+  spark.textContent = "";
+  history = history || [];
+
+  var byDate = {};
+  history.forEach(function (p) { byDate[p.date] = p.requests; });
+
+  // 以服务端给的最后一天为锚点，避免浏览器时区与服务端不一致。
+  var last = history.length
+    ? history[history.length - 1].date
+    : fmtDay(new Date());
+  var parts = last.split("-");
+  var end = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+
+  // 纵轴以每日配额为满格，这样柱高有绝对含义（用了 11/50 就是约 22% 高）。
+  // 只按历史最大值缩放的话，只有一天数据时那一天必然画成满格，会被误读成
+  // "配额用完了"。配额不限或周期不是每天时才退回按最大值缩放。
+  var max = 1;
+  history.forEach(function (p) { if (p.requests > max) { max = p.requests; } });
+  if (u && u.period === "day" && u.request_limit > 0) {
+    max = Math.max(max, u.request_limit);
+  }
+
+  for (var i = HISTORY_DAYS - 1; i >= 0; i--) {
+    var d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+    var date = fmtDay(d);
+    var n = byDate[date];
+    var b = document.createElement("span");
+    var fill = document.createElement("i");
+    if (n === undefined) {
+      b.title = date + "：无记录";
+    } else {
+      // 填充占整格高度的比例，最少 8% 以免少量用量看不见。
+      fill.style.height = Math.max(8, Math.round(n / max * 100)) + "%";
+      b.title = date + "：" + n + " 次";
+    }
+    if (i === 0) { b.className = "today"; }
+    b.appendChild(fill);
+    spark.appendChild(b);
+  }
+
+  var startDate = new Date(end.getFullYear(), end.getMonth(),
+    end.getDate() - (HISTORY_DAYS - 1));
+  $("axis-start").textContent = fmtDay(startDate).slice(5);
+  $("axis-end").textContent = fmtDay(end).slice(5) + " 今天";
+
+  var total = 0;
+  history.forEach(function (p) { total += p.requests; });
+
+  if (history.length === 0) {
+    $("history-hint").textContent =
+      "还没有用量记录，这里会显示最近 30 天的趋势。";
+  } else if (history.length === 1) {
+    $("history-hint").textContent =
+      history[0].date + "，共 " + total.toLocaleString() +
+      " 次请求（只有一天数据）。";
+  } else {
+    $("history-hint").textContent =
+      history[0].date + " 至 " + last + "，共 " +
+      total.toLocaleString() + " 次请求。";
+  }
+}
+
+/* ---------- 查询日志 ---------- */
+
+var log = [];
+var exhausted = false;
+var loading = false;
+
+function entryHost(e) {
+  var q = e.question || {};
+  return q.unicode_name || q.name || "";
+}
+
+function entryStatus(e) {
+  // 接口给的是 filtering.Reason 的字符串形式，例如 FilteredBlockList、
+  // Rewritten、NotFilteredNotFound。
+  var r = e.reason || "";
+  if (r === "Rewritten") { return ["warn", "改写"]; }
+  if (r.indexOf("Filtered") === 0) { return ["bad", "拦截"]; }
+  return ["", "通过"];
+}
+
+function renderLog() {
+  var body = $("log-body");
+  if (log.length === 0) {
+    body.innerHTML = '<p class="small muted">没有记录。</p>';
+    $("log-more").classList.add("hidden");
+    return;
+  }
+  var frag = document.createDocumentFragment();
+  log.forEach(function (e) {
+    var st = entryStatus(e);
+    var row = document.createElement("div");
+    row.className = "logrow";
+
+    var badge = document.createElement("span");
+    badge.className = "badge " + st[0];
+    badge.textContent = st[1];
+
+    var main = document.createElement("div");
+    main.className = "logmain";
+
+    var host = document.createElement("div");
+    host.className = "host";
+    host.textContent = entryHost(e) || "—";
+    host.title = host.textContent;
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    var parts = [];
+    if (e.question && e.question.type) { parts.push(e.question.type); }
+    if (e.time) { parts.push(fmtDate(Date.parse(e.time) / 1000)); }
+    if (e.client) { parts.push(e.client); }
+    meta.textContent = parts.join(" · ");
+
+    main.appendChild(host);
+    main.appendChild(meta);
+    row.appendChild(badge);
+    row.appendChild(main);
+    frag.appendChild(row);
+  });
+  body.textContent = "";
+  body.appendChild(frag);
+  $("log-more").classList.toggle("hidden", exhausted || log.length >= MAX_KEPT);
+}
+
+function loadLog(reset) {
+  if (loading) { return Promise.resolve(); }
+  loading = true;
+  var more = $("log-more");
+  more.disabled = true;
+
+  var term = $("log-term").value.trim();
+  var path = "/portal/api/log?limit=" + PAGE_SIZE;
+  if (term) { path += "&term=" + encodeURIComponent(term); }
+  if (!reset && log.length > 0) {
+    // 用最后一条的时间做游标，避免重复。
+    var last = log[log.length - 1];
+    if (last && last.time) {
+      path += "&older_than=" + encodeURIComponent(last.time);
+    }
+  }
+
+  return api(path).then(function (r) {
+    if (r.status === 401) {
+      throw new Error("登录已失效，请重新登录");
+    }
+    if (!r.ok) { throw new Error("加载失败（HTTP " + r.status + "）"); }
+    return r.json();
+  }).then(function (d) {
+    var data = (d && d.data) || [];
+    if (reset) { log = []; }
+    log = log.concat(data);
+    if (log.length > MAX_KEPT) { log = log.slice(0, MAX_KEPT); }
+    exhausted = data.length < PAGE_SIZE;
+    renderLog();
+    showAlert($("panel-alert"), "");
+  }).catch(function (err) {
+    showAlert($("panel-alert"), err.message);
+    if (/登录已失效/.test(err.message)) { showLogin(err.message); }
+  }).finally(function () {
+    loading = false;
+    more.disabled = false;
+  });
+}
+
+$("log-refresh").addEventListener("click", function () {
+  exhausted = false;
+  loadLog(true);
+});
+$("log-more").addEventListener("click", function () { loadLog(false); });
+$("log-term").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") { exhausted = false; loadLog(true); }
+});
+
+/* ---------- 启动 ---------- */
+
+api("/portal/api/me").then(function (r) {
+  if (!r.ok) { return null; }
+  return r.json();
+}).then(function (d) {
+  if (d && d.user) {
+    showPanel();
+    renderUser(d.user);
+    loadLog(true);
+  } else {
+    showLogin("");
+  }
+}).catch(function () {
+  showLogin("");
+});
+</script>
+</body>
+</html>

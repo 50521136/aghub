@@ -320,7 +320,7 @@ func isPublicResource(p string) (ok bool) {
 	// not go through the administrator authentication middleware.  This is a
 	// prefix check and not a glob, because [path.Match] does not let a "*"
 	// cross a slash and every portal path is below /portal/.
-	isPortal := strings.HasPrefix(p, "/portal/")
+	isPortal := p == "/portal" || strings.HasPrefix(p, "/portal/")
 
 	paths := []string{
 		"/control/login",

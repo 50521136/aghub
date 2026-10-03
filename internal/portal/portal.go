@@ -95,6 +95,10 @@ type LogRequest struct {
 	// Term is an optional term matched against the host, client and address.
 	Term string
 
+	// OlderThan, if not zero, returns only the entries older than it.  The
+	// log view uses it as a cursor to load the next page.
+	OlderThan time.Time
+
 	// Limit is the maximum number of entries to return.
 	Limit int
 }
@@ -335,6 +339,7 @@ func (m *Manager) SearchLog(ctx context.Context, u *users.User, req *LogRequest)
 		ClientIDs:  ids,
 		ClientNets: nets,
 		Term:       req.Term,
+		OlderThan:  req.OlderThan,
 		Limit:      limit,
 	})
 }

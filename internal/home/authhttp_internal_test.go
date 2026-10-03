@@ -833,9 +833,11 @@ func TestIsPublicResource(t *testing.T) {
 		path: "/portal/",
 		want: true,
 	}, {
+		// Without the slash the mux answers with a redirect to /portal/,
+		// which the middleware must not intercept either.
 		name: "portal_without_slash",
 		path: "/portal",
-		want: false,
+		want: true,
 	}, {
 		name: "portal_lookalike",
 		path: "/portalother/api/me",

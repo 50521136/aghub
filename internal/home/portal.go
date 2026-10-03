@@ -124,6 +124,7 @@ func (s *portalLogSource) Search(
 		ClientIDs:  req.ClientIDs,
 		ClientNets: req.ClientNets,
 		Term:       req.Term,
+		OlderThan:  req.OlderThan,
 		Limit:      req.Limit,
 	})
 	if err != nil {

@@ -26,6 +26,10 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	reg.Register(http.MethodPost, "/portal/api/logout", m.handleLogout)
 	reg.Register(http.MethodGet, "/portal/api/me", m.handleMe)
 	reg.Register(http.MethodGet, "/portal/api/log", m.handleLog)
+
+	// The bundled front-end is served on the same origin as the API.  A
+	// deployment that hosts the front-end elsewhere simply ignores it.
+	m.registerStatic(reg)
 }
 
 // allowedOrigin returns the value for the CORS headers when the request comes
@@ -342,6 +346,17 @@ func (m *Manager) handleLog(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	req := &LogRequest{Term: strings.TrimSpace(q.Get("term"))}
+
+	if raw := q.Get("older_than"); raw != "" {
+		olderThan, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest, "invalid older_than")
+
+			return
+		}
+
+		req.OlderThan = olderThan
+	}
 
 	if raw := q.Get("limit"); raw != "" {
 		limit, err := strconv.Atoi(raw)
