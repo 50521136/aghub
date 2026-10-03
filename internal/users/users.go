@@ -678,20 +678,49 @@ func (e *usage) recordHistory(date string, requests int64) {
 }
 
 // historyOf returns the usage history of the user, oldest first.
-func (e *usage) historyOf() (points []UsagePoint) {
+//
+// The current day is appended when the user has been counted at least once.
+// The rotation only moves the days that have passed into the history, so
+// without it a user would see a chart that does not contain the very day they
+// are looking at.
+func (e *usage) historyOf(loc *time.Location, now time.Time) (points []UsagePoint) {
 	h := e.history.Load()
-	if h == nil {
-		return nil
+	if h != nil {
+		points = make([]UsagePoint, 0, len(*h)+1)
+		for date, requests := range *h {
+			points = append(points, UsagePoint{Date: date, Requests: requests})
+		}
+
+		slices.SortFunc(points, func(a, b UsagePoint) (cmp int) {
+			return strings.Compare(a.Date, b.Date)
+		})
 	}
 
-	points = make([]UsagePoint, 0, len(*h))
-	for date, requests := range *h {
-		points = append(points, UsagePoint{Date: date, Requests: requests})
+	// A user who has never made a request gets no history at all, so the
+	// current day is only added once there is one.  dayStart alone is not
+	// enough to tell: the rotation opens a bucket for every user, active or
+	// not.
+	//
+	// The bucket may not be open yet, which is the case for a user created
+	// after the last rotation.  The requests they just made are already
+	// counted, so fall back to the current day rather than showing them an
+	// empty chart.
+	start := e.dayStart.Load()
+	if len(points) > 0 || e.dayCount.Load() > 0 {
+		day := now.In(loc)
+		if start != 0 {
+			day = time.Unix(start, 0).In(loc)
+		}
+
+		today := day.Format(time.DateOnly)
+		if len(points) == 0 || points[len(points)-1].Date != today {
+			points = append(points, UsagePoint{Date: today, Requests: e.dayCount.Load()})
+		}
 	}
 
-	slices.SortFunc(points, func(a, b UsagePoint) (cmp int) {
-		return strings.Compare(a.Date, b.Date)
-	})
+	if len(points) > historyDays {
+		points = points[len(points)-historyDays:]
+	}
 
 	return points
 }
@@ -798,7 +827,7 @@ func (m *Manager) info(e *entry) (i *Info) {
 		PeriodStart:       e.usage.periodStart.Load(),
 		LastSeen:          e.usage.lastSeen.Load(),
 		NextReset:         nextPeriodStart(m.now(), m.loc, u.Period),
-		History:           e.usage.historyOf(),
+		History:           e.usage.historyOf(m.loc, m.now()),
 		HasPortalPassword: m.HasPortalPassword(u.UID),
 	}
 

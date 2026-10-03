@@ -52,12 +52,8 @@ func TestUsageHistoryRecordsTheDay(t *testing.T) {
 	queryUser(t, m, "alice", 3)
 
 	// The first flush only adopts the day, since the requests that were
-	// counted before it happened within the same flush interval.
-	flushHistory(m, *now)
-	assert.Empty(t, historyOf(t, m, "alice"))
-
-	// The rollover to the next day closes the bucket of the first one.
-	*now = now.AddDate(0, 0, 1)
+	// counted before it happened within the same flush interval.  Nothing has
+	// been stored yet, so the report shows the open day alone.
 	flushHistory(m, *now)
 
 	history := historyOf(t, m, "alice")
@@ -65,9 +61,8 @@ func TestUsageHistoryRecordsTheDay(t *testing.T) {
 	assert.Equal(t, "2026-10-02", history[0].Date)
 	assert.Equal(t, int64(3), history[0].Requests)
 
-	// The next day is counted on its own.
-	queryUser(t, m, "alice", 2)
-
+	// The rollover to the next day closes the bucket of the first one, and
+	// the new day opens empty.
 	*now = now.AddDate(0, 0, 1)
 	flushHistory(m, *now)
 
@@ -76,7 +71,22 @@ func TestUsageHistoryRecordsTheDay(t *testing.T) {
 	assert.Equal(t, "2026-10-02", history[0].Date)
 	assert.Equal(t, int64(3), history[0].Requests)
 	assert.Equal(t, "2026-10-03", history[1].Date)
+	assert.Equal(t, int64(0), history[1].Requests)
+
+	// The next day is counted on its own.
+	queryUser(t, m, "alice", 2)
+
+	*now = now.AddDate(0, 0, 1)
+	flushHistory(m, *now)
+
+	history = historyOf(t, m, "alice")
+	require.Len(t, history, 3)
+	assert.Equal(t, "2026-10-02", history[0].Date)
+	assert.Equal(t, int64(3), history[0].Requests)
+	assert.Equal(t, "2026-10-03", history[1].Date)
 	assert.Equal(t, int64(2), history[1].Requests)
+	assert.Equal(t, "2026-10-04", history[2].Date)
+	assert.Equal(t, int64(0), history[2].Requests)
 }
 
 func TestUsageHistoryKeepsOnlyRecentDays(t *testing.T) {
@@ -97,12 +107,13 @@ func TestUsageHistoryKeepsOnlyRecentDays(t *testing.T) {
 	require.Len(t, history, historyDays)
 
 	// The dropped entries are the oldest ones, so what is left is ordered
-	// oldest first.
+	// oldest first and ends with the current day.
 	for i := 1; i < len(history); i++ {
 		assert.Less(t, history[i-1].Date, history[i].Date)
 	}
 
-	assert.Equal(t, "2026-10-07", history[0].Date)
+	assert.Equal(t, "2026-10-08", history[0].Date)
+	assert.Equal(t, "2026-11-06", history[len(history)-1].Date)
 }
 
 func TestUsageHistorySurvivesReload(t *testing.T) {
@@ -125,9 +136,13 @@ func TestUsageHistorySurvivesReload(t *testing.T) {
 	require.NoError(t, err)
 
 	history := historyOf(t, reopened, "alice")
-	require.Len(t, history, 1)
+	require.Len(t, history, 2)
 	assert.Equal(t, "2026-10-02", history[0].Date)
 	assert.Equal(t, int64(7), history[0].Requests)
+
+	// The day the process was restarted into is still open.
+	assert.Equal(t, "2026-10-03", history[1].Date)
+	assert.Equal(t, int64(0), history[1].Requests)
 }
 
 func TestUsageHistoryEmptyForIdleUser(t *testing.T) {
@@ -159,14 +174,16 @@ func TestUsageHistoryKeepsIdleDaysAfterActivity(t *testing.T) {
 	flushHistory(m, *now)
 
 	history := historyOf(t, m, "alice")
-	require.Len(t, history, 3)
 
 	// The idle day is kept as a zero rather than omitted, so that the report
-	// shows a continuous timeline.
+	// shows a continuous timeline.  The current day is appended as well: it
+	// has no requests yet, but it is the day the report is looked at on.
+	require.Len(t, history, 4)
 	assert.Equal(t, []UsagePoint{
 		{Date: "2026-10-02", Requests: 4},
 		{Date: "2026-10-03", Requests: 0},
 		{Date: "2026-10-04", Requests: 1},
+		{Date: "2026-10-05", Requests: 0},
 	}, history)
 }
 
@@ -196,9 +213,13 @@ func TestUsageHistorySurvivesRestartWithinADay(t *testing.T) {
 	flushHistory(reopened, clock)
 
 	history := historyOf(t, reopened, "alice")
-	require.Len(t, history, 1)
+	require.Len(t, history, 2)
 	assert.Equal(t, "2026-10-02", history[0].Date)
 	assert.Equal(t, int64(5), history[0].Requests)
+
+	// The new day is open and empty.
+	assert.Equal(t, "2026-10-03", history[1].Date)
+	assert.Equal(t, int64(0), history[1].Requests)
 }
 
 func TestUsageHistoryMarksTheStateForSaving(t *testing.T) {
@@ -279,4 +300,59 @@ func TestUsageHistoryConcurrentAccess(t *testing.T) {
 	for _, point := range historyOf(t, reopened, "alice") {
 		assert.GreaterOrEqual(t, point.Requests, int64(0))
 	}
+}
+
+func TestUsageHistoryIncludesTheCurrentDay(t *testing.T) {
+	m, now := newTestManager(t)
+
+	addTestUser(t, m, "alice")
+	flushHistory(m, *now)
+
+	// A user who has never made a request has no history to show.
+	assert.Empty(t, historyOf(t, m, "alice"))
+
+	// Once there is a request, the current day appears with its live count.
+	// The rotation has not run for it yet, so it can only come from the
+	// counter of the open bucket.
+	queryUser(t, m, "alice", 7)
+
+	history := historyOf(t, m, "alice")
+	require.Len(t, history, 1)
+	assert.Equal(t, "2026-10-02", history[0].Date)
+	assert.Equal(t, int64(7), history[0].Requests)
+
+	queryUser(t, m, "alice", 3)
+
+	history = historyOf(t, m, "alice")
+	require.Len(t, history, 1)
+	assert.Equal(t, int64(10), history[0].Requests, "the count must be live")
+
+	// After the rotation the day becomes a stored one, and the new current
+	// day is appended after it rather than replacing it.
+	*now = now.AddDate(0, 0, 1)
+	flushHistory(m, *now)
+
+	history = historyOf(t, m, "alice")
+	require.Len(t, history, 2)
+	assert.Equal(t, "2026-10-02", history[0].Date)
+	assert.Equal(t, int64(10), history[0].Requests)
+	assert.Equal(t, "2026-10-03", history[1].Date)
+	assert.Equal(t, int64(0), history[1].Requests)
+}
+
+func TestUsageHistoryBeforeTheFirstRotation(t *testing.T) {
+	m, _ := newTestManager(t)
+
+	addTestUser(t, m, "alice")
+
+	// No rotation has run yet, so no day bucket is open for the user.  The
+	// requests are counted all the same, and the user must see them instead
+	// of an empty chart.  This is the state of a user created between two
+	// rotations.
+	queryUser(t, m, "alice", 6)
+
+	history := historyOf(t, m, "alice")
+	require.Len(t, history, 1)
+	assert.Equal(t, "2026-10-02", history[0].Date)
+	assert.Equal(t, int64(6), history[0].Requests)
 }
