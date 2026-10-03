@@ -1642,6 +1642,31 @@
               'schema':
                 '$ref': '#/components/schemas/Error'
           'description': 'Bad request.'
+  '/users/password':
+    'post':
+      'tags':
+      - 'users'
+      'operationId': 'usersPassword'
+      'summary': 'Set or clear the user portal password'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/UsersPasswordRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/UserActionResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
   '/users/import':
     'post':
       'tags':
@@ -2094,6 +2119,18 @@
           'type': 'array'
           'items':
             'type': 'string'
+    'UsersPasswordRequest':
+      'type': 'object'
+      'description': 'A new password for the user portal'
+      'required':
+      - 'uid'
+      - 'password'
+      'properties':
+        'uid':
+          'type': 'string'
+        'password':
+          'type': 'string'
+          'description': 'An empty value revokes the portal access.'
     'UsersToggleRequest':
       'type': 'object'
       'description': 'Request to enable or disable a set of users'

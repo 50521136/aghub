@@ -80,6 +80,7 @@ import type {
     UsersImportRequest,
     UsersList,
     UsersToggleRequest,
+    UsersPasswordRequest,
     UsersUIDsRequest,
     VersionInfo,
 } from './model';
@@ -1653,6 +1654,25 @@ export const usersReset = async (
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(usersUIDsRequest),
+    });
+};
+
+export const getUsersPasswordUrl = () => {
+    return `control/users/password`;
+};
+
+/**
+ * @summary Set or clear the user portal password
+ */
+export const usersPassword = async (
+    usersPasswordRequest: UsersPasswordRequest,
+    options?: RequestInit,
+): Promise<UserActionResponse> => {
+    return customFetch<UserActionResponse>(getUsersPasswordUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(usersPasswordRequest),
     });
 };
 

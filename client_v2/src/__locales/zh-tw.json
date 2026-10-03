@@ -932,5 +932,12 @@
   "yes_disable": "禁用",
   "yes_disallow": "是，禁止",
   "yes_remove": "是，移除",
-  "yes_reset": "重置"
+  "yes_reset": "重置",
+  "users_portal_password_set": "门户密码已设置",
+  "users_portal_password_cleared": "已撤销门户访问",
+  "users_portal_password": "门户密码",
+  "users_portal_password_hint": "用户用其标识和这个密码登录门户。",
+  "users_portal_password_placeholder": "留空即撤销访问",
+  "users_portal_password_has_access": "该用户可以登录门户。",
+  "users_portal_password_no_access": "该用户还没有门户访问权限。"
 }

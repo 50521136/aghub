@@ -16,6 +16,7 @@ import { addErrorToast, addSuccessToast } from 'panel/stores/toasts';
 
 import { BulkAddDialog } from './blocks/BulkAddDialog';
 import { BackupsDialog } from './blocks/BackupsDialog';
+import { PortalPasswordDialog } from './blocks/PortalPasswordDialog';
 import { UserDialog } from './blocks/UserDialog';
 import s from './Users.module.pcss';
 
@@ -230,6 +231,7 @@ export const Users = () => {
     const [confirmKind, setConfirmKind] = createSignal<'delete' | 'reset' | ''>('');
     const [bulkAddShown, setBulkAddShown] = createSignal(false);
     const [backupsShown, setBackupsShown] = createSignal(false);
+    const [portalUser, setPortalUser] = createSignal<User | null>(null);
 
     onMount(() => {
         getUsers();
@@ -548,6 +550,21 @@ export const Users = () => {
                             </button>
                         </Tooltip>
 
+                        <Tooltip content={intl.getMessage('users_portal_password')}>
+                            <button
+                                type="button"
+                                class={theme.table.action}
+                                disabled={usersState.processingSave}
+                                onClick={() => setPortalUser(u)}
+                                data-testid="user-portal-password"
+                            >
+                                <Icon icon="user" />
+                                <span class={theme.table.actionLabel}>
+                                    {intl.getMessage('users_portal_password')}
+                                </span>
+                            </button>
+                        </Tooltip>
+
                         <Tooltip content={intl.getMessage('users_delete')}>
                             <button
                                 type="button"
@@ -784,6 +801,13 @@ export const Users = () => {
 
             <Show when={bulkAddShown()}>
                 <BulkAddDialog onClose={() => setBulkAddShown(false)} />
+            </Show>
+
+            <Show when={portalUser()}>
+                <PortalPasswordDialog
+                    user={portalUser() as User}
+                    onClose={() => setPortalUser(null)}
+                />
             </Show>
 
             <Show when={backupsShown()}>

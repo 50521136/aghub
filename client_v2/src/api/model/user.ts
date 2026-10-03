@@ -42,4 +42,6 @@ export interface User {
     remaining_requests?: number;
     /** Unix timestamp at which the current period ends and the counter resets.  0 means never. */
     next_reset?: number;
+    /** Whether the user has a password for the user portal. */
+    has_portal_password?: boolean;
 }

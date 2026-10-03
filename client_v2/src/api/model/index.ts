@@ -147,6 +147,7 @@ export * from './usersList';
 export * from './usersSummary';
 export * from './userStatus';
 export * from './usersToggleRequest';
+export * from './usersPasswordRequest';
 export * from './usersUIDsRequest';
 export * from './userUpdateRequest';
 export * from './userUpdateRequestPeriod';

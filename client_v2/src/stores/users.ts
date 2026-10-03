@@ -6,6 +6,7 @@ import {
     usersBulkAdd,
     usersDelete,
     usersList,
+    usersPassword,
     usersReset,
     usersRestore,
     usersSetSettings,
@@ -203,6 +204,30 @@ export const resetUsers = async (uids: string[]) => {
 
     setState('processingSave', false);
     await getUsers();
+};
+
+/**
+ * setUserPassword sets the password the user signs in to the portal with.  An
+ * empty password revokes the portal access of the user.
+ */
+export const setUserPassword = async (uid: string, password: string): Promise<boolean> => {
+    setState('processingSave', true);
+
+    let ok = false;
+    try {
+        await usersPassword({ uid, password });
+        addSuccessToast(intl.getMessage(
+            password ? 'users_portal_password_set' : 'users_portal_password_cleared',
+        ));
+        ok = true;
+    } catch (error) {
+        addErrorToast({ error });
+    }
+
+    setState('processingSave', false);
+    await getUsers();
+
+    return ok;
 };
 
 export const toggleUsers = async (uids: string[], enabled: boolean) => {
