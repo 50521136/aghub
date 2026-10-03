@@ -150,6 +150,7 @@ func (m *Manager) RegisterWebHandlers(reg aghhttp.Registrar) {
 	reg.Register(http.MethodPost, "/control/users/delete", m.handleDelete)
 	reg.Register(http.MethodPost, "/control/users/reset", m.handleReset)
 	reg.Register(http.MethodPost, "/control/users/toggle", m.handleToggle)
+	reg.Register(http.MethodPost, "/control/users/password", m.handlePortalPassword)
 	reg.Register(http.MethodPost, "/control/users/import", m.handleImport)
 	reg.Register(http.MethodPost, "/control/users/bulk-add", m.handleBulkAdd)
 	reg.Register(http.MethodGet, "/control/users/backups", m.handleBackups)
@@ -337,7 +338,7 @@ func (m *Manager) handleAdd(w http.ResponseWriter, r *http.Request) {
 	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &actionResp{
 		OK:      true,
 		Message: "user added",
-		User:    m.infoOf(u.UID),
+		User:    m.InfoOf(u.UID),
 	})
 }
 
@@ -381,7 +382,7 @@ func (m *Manager) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &actionResp{
 		OK:      true,
 		Message: "user updated",
-		User:    m.infoOf(req.UID),
+		User:    m.InfoOf(req.UID),
 	})
 }
 
@@ -480,6 +481,61 @@ func (m *Manager) handleToggle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// portalPasswordReq is the request body of the POST /control/users/password
+// HTTP API.
+type portalPasswordReq struct {
+	// UID is the user to change the password of.
+	UID string `json:"uid"`
+
+	// Password is the new portal password.  An empty value revokes the
+	// portal access of the user.
+	Password string `json:"password"`
+}
+
+// handlePortalPassword is the handler for the POST /control/users/password
+// HTTP API.  It sets or clears the password the user signs in to the user
+// portal with.
+func (m *Manager) handlePortalPassword(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	req := &portalPasswordReq{}
+	err := json.NewDecoder(r.Body).Decode(req)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "decoding request: %s", err)
+
+		return
+	}
+
+	if req.UID == "" {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "uid is empty")
+
+		return
+	}
+
+	if req.Password == "" {
+		err = m.ClearPortalPassword(req.UID)
+	} else {
+		err = m.SetPortalPassword(req.UID, req.Password)
+	}
+
+	if err != nil {
+		// The error explains why the password was refused, which is useful
+		// to the administrator and reveals nothing about other users.
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "%s", err)
+
+		return
+	}
+
+	l.InfoContext(ctx, "portal password changed", "uid", req.UID, "cleared", req.Password == "")
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &actionResp{
+		OK:      true,
+		Message: "portal password updated",
+		User:    m.InfoOf(req.UID),
+	})
+}
+
 // handleImport is the handler for the POST /control/users/import HTTP API.
 func (m *Manager) handleImport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -522,9 +578,9 @@ func (m *Manager) handleImport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// infoOf returns the API representation of the user with the given UID, if
+// InfoOf returns the API representation of the user with the given UID, if
 // any.
-func (m *Manager) infoOf(uid string) (i *Info) {
+func (m *Manager) InfoOf(uid string) (i *Info) {
 	snap := m.snap.Load()
 	if snap == nil {
 		return nil

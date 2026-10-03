@@ -316,6 +316,12 @@ func isPublicResource(p string) (ok bool) {
 		panic(fmt.Errorf("bad forgot password pattern: %w", err))
 	}
 
+	// The portal is a separate interface with its own sessions, so it must
+	// not go through the administrator authentication middleware.  This is a
+	// prefix check and not a glob, because [path.Match] does not let a "*"
+	// cross a slash and every portal path is below /portal/.
+	isPortal := strings.HasPrefix(p, "/portal/")
+
 	paths := []string{
 		"/control/login",
 		"/apple/doh.mobileconfig",
@@ -326,7 +332,7 @@ func isPublicResource(p string) (ok bool) {
 		"/install.html",
 	}
 
-	return isAsset || isLogin || isForgotPassword || slices.Contains(paths, p)
+	return isAsset || isLogin || isForgotPassword || isPortal || slices.Contains(paths, p)
 }
 
 const (

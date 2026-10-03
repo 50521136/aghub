@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,6 +23,11 @@ type stateFile struct {
 
 	// Usage is the runtime usage by user UID.
 	Usage map[string]*usageState `json:"usage"`
+
+	// PortalPasswords are the bcrypt hashes of the user portal passwords by
+	// user UID.  They are kept out of [User] so that they cannot leak through
+	// the administrator API.
+	PortalPasswords map[string]string `json:"portal_passwords,omitempty"`
 
 	// Settings is the manager-wide configuration.
 	Settings *Settings `json:"settings,omitempty"`
@@ -89,6 +95,18 @@ func (m *Manager) load() (err error) {
 		m.usage[u.UID] = us
 	}
 
+	// The passwords of the users that are gone are dropped, so that deleting
+	// and re-creating a user does not restore the old credentials.
+	for uid, hash := range state.PortalPasswords {
+		if hash == "" {
+			continue
+		}
+
+		if _, ok := m.defs[uid]; ok {
+			m.portalPasswords[uid] = hash
+		}
+	}
+
 	m.logger.Info("loaded user state", "path", m.path, "users", len(m.defs))
 
 	return nil
@@ -124,6 +142,11 @@ func (m *Manager) save() (err error) {
 
 			state.Usage[uid] = st
 		}
+	}
+
+	if len(m.portalPasswords) > 0 {
+		state.PortalPasswords = make(map[string]string, len(m.portalPasswords))
+		maps.Copy(state.PortalPasswords, m.portalPasswords)
 	}
 
 	m.mu.Unlock()
@@ -543,6 +566,15 @@ func (m *Manager) ImportUsers(users []*User) (n int, err error) {
 
 	m.defs = defs
 	m.usage = usages
+
+	// The import replaces the whole user list, so the passwords of the users
+	// that are gone must go with it.
+	maps.DeleteFunc(m.portalPasswords, func(uid string, _ string) (del bool) {
+		_, ok := defs[uid]
+
+		return !ok
+	})
+
 	m.publishLocked()
 	m.dirty.Store(true)
 

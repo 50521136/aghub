@@ -21,6 +21,7 @@ import (
 
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Period is the quota accounting period of a user.
@@ -104,6 +105,16 @@ type User struct {
 	// Enabled is the administrator-controlled switch of the user.
 	Enabled bool `json:"enabled"`
 }
+
+const (
+	// minPortalPasswordLen is the minimum length of a portal password.
+	minPortalPasswordLen = 8
+
+	// maxPortalPasswordLen is the maximum length of a portal password.  It
+	// keeps the bcrypt input within its limit and rejects accidental
+	// pastes.
+	maxPortalPasswordLen = 128
+)
 
 // historyDays is the number of days of per-user usage history that is kept.
 const historyDays = 30
@@ -191,6 +202,15 @@ type Manager struct {
 	// usage holds the runtime usage by UID.
 	usage map[string]*usage
 
+	// portalPasswords holds the bcrypt hashes of the user portal passwords by
+	// UID.  A user without an entry has no portal access.
+	//
+	// The hashes are deliberately kept out of [User] and [Info], because
+	// [Info] embeds [User] and is returned by the administrator API, so a
+	// field on the user would end up in every response.  Keeping them in a
+	// separate map makes that impossible by construction.
+	portalPasswords map[string]string
+
 	// path is the path of the state file.
 	path string
 
@@ -231,6 +251,14 @@ type Settings struct {
 	// updater connects to GitHub directly.  It is not related to users; it
 	// lives here because this is the AGHub-wide settings store.
 	UpdateProxy string `json:"update_proxy,omitempty"`
+
+	// PortalOrigins are the origins of the user portal front-ends that are
+	// allowed to call the portal API from a browser, for example
+	// "https://portal.example.com".  A full URL is accepted and reduced to
+	// its origin.  When it is empty, only a front-end served by AGHub itself
+	// can use the portal, which is the safest default.  It is not related to
+	// users; it lives here because this is the AGHub-wide settings store.
+	PortalOrigins []string `json:"portal_origins,omitempty"`
 }
 
 // Config is the configuration of a Manager.
@@ -264,14 +292,15 @@ func New(cfg *Config) (m *Manager, err error) {
 	}
 
 	m = &Manager{
-		logger:      cfg.Logger.With(slogutil.KeyPrefix, "users"),
-		defs:        map[string]*User{},
-		usage:       map[string]*usage{},
-		path:        cfg.Path,
-		loc:         loc,
-		periodStart: map[Period]int64{},
-		now:         time.Now,
-		done:        make(chan struct{}),
+		logger:          cfg.Logger.With(slogutil.KeyPrefix, "users"),
+		defs:            map[string]*User{},
+		usage:           map[string]*usage{},
+		portalPasswords: map[string]string{},
+		path:            cfg.Path,
+		loc:             loc,
+		periodStart:     map[Period]int64{},
+		now:             time.Now,
+		done:            make(chan struct{}),
 	}
 
 	m.settings.Store(&Settings{})
@@ -751,6 +780,10 @@ type Info struct {
 	// History is the per-day request count of the user, oldest first.  It is
 	// limited to the most recent [historyDays] days.
 	History []UsagePoint `json:"history,omitempty"`
+
+	// HasPortalPassword is true when the user can sign in to the user portal.
+	// The password itself is never exposed.
+	HasPortalPassword bool `json:"has_portal_password"`
 }
 
 // info builds the API representation of an entry.
@@ -759,13 +792,14 @@ func (m *Manager) info(e *entry) (i *Info) {
 	now := m.now().Unix()
 
 	i = &Info{
-		User:          u,
-		Requests:      e.usage.requests.Load(),
-		TotalRequests: e.usage.total.Load(),
-		PeriodStart:   e.usage.periodStart.Load(),
-		LastSeen:      e.usage.lastSeen.Load(),
-		NextReset:     nextPeriodStart(m.now(), m.loc, u.Period),
-		History:       e.usage.historyOf(),
+		User:              u,
+		Requests:          e.usage.requests.Load(),
+		TotalRequests:     e.usage.total.Load(),
+		PeriodStart:       e.usage.periodStart.Load(),
+		LastSeen:          e.usage.lastSeen.Load(),
+		NextReset:         nextPeriodStart(m.now(), m.loc, u.Period),
+		History:           e.usage.historyOf(),
+		HasPortalPassword: m.HasPortalPassword(u.UID),
 	}
 
 	if u.ExpiresAt > 0 {
@@ -881,6 +915,7 @@ func (m *Manager) GetSettings() (s *Settings) {
 	}
 
 	return &Settings{
+		PortalOrigins: slices.Clone(cur.PortalOrigins),
 		DenyUnmatched: cur.DenyUnmatched,
 		UpdateProxy:   cur.UpdateProxy,
 	}
@@ -893,12 +928,17 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 	}
 
 	m.settings.Store(&Settings{
+		PortalOrigins: slices.Clone(s.PortalOrigins),
 		DenyUnmatched: s.DenyUnmatched,
 		UpdateProxy:   s.UpdateProxy,
 	})
 	m.dirty.Store(true)
 
-	m.logger.Info("user settings updated", "deny_unmatched", s.DenyUnmatched)
+	m.logger.Info(
+		"user settings updated",
+		"deny_unmatched", s.DenyUnmatched,
+		"portal_origins", len(s.PortalOrigins),
+	)
 
 	return nil
 }
@@ -1171,6 +1211,7 @@ func (m *Manager) Remove(uid string) (err error) {
 
 	delete(m.defs, uid)
 	delete(m.usage, uid)
+	delete(m.portalPasswords, uid)
 	m.publishLocked()
 	m.dirty.Store(true)
 
@@ -1230,6 +1271,120 @@ func (m *Manager) SetEnabled(uids []string, enabled bool) (n int) {
 
 	return n
 }
+
+// SetPortalPassword sets the password the user signs in to the user portal
+// with.  It returns an error if the password does not meet the length limits.
+func (m *Manager) SetPortalPassword(uid, password string) (err error) {
+	if len(password) < minPortalPasswordLen {
+		return fmt.Errorf("users: password is shorter than %d characters", minPortalPasswordLen)
+	}
+
+	if len(password) > maxPortalPasswordLen {
+		return fmt.Errorf("users: password is longer than %d characters", maxPortalPasswordLen)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("users: hashing the password: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.defs[uid]; !ok {
+		return fmt.Errorf("users: no user with uid %q", uid)
+	}
+
+	m.portalPasswords[uid] = string(hash)
+	m.dirty.Store(true)
+
+	return nil
+}
+
+// ClearPortalPassword revokes the portal access of the user.
+func (m *Manager) ClearPortalPassword(uid string) (err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.defs[uid]; !ok {
+		return fmt.Errorf("users: no user with uid %q", uid)
+	}
+
+	delete(m.portalPasswords, uid)
+	m.dirty.Store(true)
+
+	return nil
+}
+
+// HasPortalPassword returns true if the user can sign in to the user portal.
+func (m *Manager) HasPortalPassword(uid string) (ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, ok = m.portalPasswords[uid]
+
+	return ok
+}
+
+// FindByLogin returns the user matching the given portal login, or nil.  The
+// login is matched against the identifiers first, since they are unique, and
+// then against the name, which is only used when it is unambiguous.
+//
+// The comparison is case-insensitive, because the identifiers are host name
+// labels and the users type them by hand.
+func (m *Manager) FindByLogin(login string) (u *User) {
+	login = strings.ToLower(strings.TrimSpace(login))
+	if login == "" {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var byName []*User
+
+	for _, def := range m.defs {
+		for _, id := range def.IDs {
+			if strings.ToLower(id) == login {
+				return def
+			}
+		}
+
+		if strings.ToLower(def.Name) == login {
+			byName = append(byName, def)
+		}
+	}
+
+	if len(byName) == 1 {
+		return byName[0]
+	}
+
+	// Either no user at all or several sharing the name.  Both are refused,
+	// because signing in as the wrong user would leak their query log.
+	return nil
+}
+
+// AuthenticatePortal returns true if password is the portal password of the
+// user with the given UID.  The comparison always runs, even for a user
+// without a password, so that the response time does not reveal whether the
+// login exists.
+func (m *Manager) AuthenticatePortal(uid, password string) (ok bool) {
+	m.mu.Lock()
+	hash, hasPassword := m.portalPasswords[uid]
+	m.mu.Unlock()
+
+	if !hasPassword {
+		// An invalid bcrypt hash, so the comparison below fails after doing
+		// the same amount of work.
+		hash = dummyPasswordHash
+	}
+
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// dummyPasswordHash is a syntactically valid bcrypt hash used to keep the
+// duration of a failed login constant.  Its value is irrelevant.
+const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 // clashLocked returns the identifier that is already used by another user as
 // well as the name of that user, or empty strings.  m.mu is expected to be

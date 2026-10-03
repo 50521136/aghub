@@ -42,6 +42,16 @@ func NewDefaultRegistrar(mux *http.ServeMux, wrap WrapFunc) (r *DefaultRegistrar
 // type check
 var _ Registrar = (*DefaultRegistrar)(nil)
 
+// NewPlainRegistrar returns a registrar that registers the handlers as they
+// are, without any middleware.  It is meant for the interfaces that
+// authenticate on their own, such as the user portal, whose sessions must not
+// be mixed up with the administrator ones.
+func NewPlainRegistrar(mux *http.ServeMux) (r *DefaultRegistrar) {
+	return NewDefaultRegistrar(mux, func(_ string, h http.HandlerFunc) (wrapped http.Handler) {
+		return h
+	})
+}
+
 // Register implements the [Registrar] interface.
 func (r *DefaultRegistrar) Register(method, path string, h http.HandlerFunc) {
 	wrapped := r.wrapFn(method, h)

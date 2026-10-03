@@ -785,3 +785,66 @@ func TestRealIP(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPublicResource(t *testing.T) {
+	testCases := []struct {
+		name string
+		path string
+		want bool
+	}{{
+		name: "asset",
+		path: "/assets/index.js",
+		want: true,
+	}, {
+		name: "login",
+		path: "/login.html",
+		want: true,
+	}, {
+		name: "control_login",
+		path: "/control/login",
+		want: true,
+	}, {
+		name: "control",
+		path: "/control/status",
+		want: false,
+	}, {
+		name: "root",
+		path: "/",
+		want: false,
+	}, {
+		// The portal authenticates on its own, so every one of its paths
+		// must bypass the administrator middleware.  This is a regression
+		// test: a glob of "/portal/*" does not match a nested path, because
+		// the "*" of [path.Match] does not cross a slash, and the portal was
+		// answering 401 to everything because of it.
+		name: "portal_login",
+		path: "/portal/api/login",
+		want: true,
+	}, {
+		name: "portal_me",
+		path: "/portal/api/me",
+		want: true,
+	}, {
+		name: "portal_log",
+		path: "/portal/api/log",
+		want: true,
+	}, {
+		name: "portal_root",
+		path: "/portal/",
+		want: true,
+	}, {
+		name: "portal_without_slash",
+		path: "/portal",
+		want: false,
+	}, {
+		name: "portal_lookalike",
+		path: "/portalother/api/me",
+		want: false,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, isPublicResource(tc.path))
+		})
+	}
+}

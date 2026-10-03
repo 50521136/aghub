@@ -34,6 +34,7 @@ import (
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering/hashprefix"
 	"github.com/AdguardTeam/AdGuardHome/internal/filtering/safesearch"
 	"github.com/AdguardTeam/AdGuardHome/internal/permcheck"
+	"github.com/AdguardTeam/AdGuardHome/internal/portal"
 	"github.com/AdguardTeam/AdGuardHome/internal/querylog"
 	"github.com/AdguardTeam/AdGuardHome/internal/selfupdate"
 	"github.com/AdguardTeam/AdGuardHome/internal/stats"
@@ -62,6 +63,7 @@ type homeContext struct {
 	dnsServer  *dnsforward.Server  // DNS module
 	dhcpServer dhcpd.Interface     // DHCP module
 	users      *users.Manager      // user quota management module
+	portal     *portal.Manager     // user portal module
 	updater    *selfupdate.Updater // online update module
 
 	filters *filtering.DNSFilter // DNS filtering module
@@ -894,6 +896,15 @@ func run(
 
 	if !isFirstRun {
 		runDNSServer(ctx, baseLogger, tlsMgr, confModifier, statsDir, querylogDir, httpReg, hc)
+
+		// The portal serves the quota users and reads their query log
+		// entries, so it can only be set up once both exist.  Its handlers
+		// are registered without the administrator per-route middleware, and
+		// the paths below /portal/ are treated as public by the global
+		// authentication middleware, because the portal authenticates on its
+		// own.
+		err = initPortal(ctx, baseLogger, aghhttp.NewPlainRegistrar(mux), workDir)
+		fatalOnError(ctx, baseLogger, err)
 
 		doHSrv := newDoHServer(&doHServerConfig{
 			handler: globalContext.dnsServer,
