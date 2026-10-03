@@ -16,6 +16,7 @@ import { addErrorToast, addSuccessToast } from 'panel/stores/toasts';
 
 import { BulkAddDialog } from './blocks/BulkAddDialog';
 import { BackupsDialog } from './blocks/BackupsDialog';
+import { PortalDeployDialog } from './blocks/PortalDeployDialog';
 import { PortalPasswordDialog } from './blocks/PortalPasswordDialog';
 import { UserDialog } from './blocks/UserDialog';
 import s from './Users.module.pcss';
@@ -232,6 +233,7 @@ export const Users = () => {
     const [bulkAddShown, setBulkAddShown] = createSignal(false);
     const [backupsShown, setBackupsShown] = createSignal(false);
     const [portalUser, setPortalUser] = createSignal<User | null>(null);
+    const [portalDeployShown, setPortalDeployShown] = createSignal(false);
 
     onMount(() => {
         getUsers();
@@ -716,6 +718,15 @@ export const Users = () => {
                             <button
                                 type="button"
                                 class={s.importButton}
+                                onClick={() => setPortalDeployShown(true)}
+                                data-testid="users-portal-deploy-button"
+                            >
+                                {intl.getMessage('users_portal_deploy')}
+                            </button>
+
+                            <button
+                                type="button"
+                                class={s.importButton}
                                 onClick={() => setBulkAddShown(true)}
                                 data-testid="users-bulk-add-button"
                             >
@@ -801,6 +812,10 @@ export const Users = () => {
 
             <Show when={bulkAddShown()}>
                 <BulkAddDialog onClose={() => setBulkAddShown(false)} />
+            </Show>
+
+            <Show when={portalDeployShown()}>
+                <PortalDeployDialog onClose={() => setPortalDeployShown(false)} />
             </Show>
 
             <Show when={portalUser()}>

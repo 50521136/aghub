@@ -927,7 +927,7 @@ func run(
 			portalReg = portalMux
 		}
 
-		err = initPortal(ctx, baseLogger, aghhttp.NewPlainRegistrar(portalReg), workDir)
+		err = initPortal(ctx, baseLogger, aghhttp.NewPlainRegistrar(portalReg), httpReg, workDir)
 		fatalOnError(ctx, baseLogger, err)
 
 		doHSrv := newDoHServer(&doHServerConfig{

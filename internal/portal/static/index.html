@@ -206,13 +206,23 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
 </div>
 
+<!-- config.js 由管理端的「门户部署」生成，里面的 apiBase 指向 API 的地址；
+     自带页面里它是空值，表示与页面同源。 -->
+<script src="config.js"></script>
+
 <script>
 "use strict";
 
-// API_BASE 留空表示与页面同源。独立部署（前端在国外、API 在国内）时改成
-// 国内 API 的地址，例如 "https://dns.example.com"。同时必须把该页面的来源
-// 加进管理端设置里的「门户来源」，否则浏览器会拦下跨域请求。
-var API_BASE = "";
+// API_BASE 留空表示与页面同源。独立部署（前端在国外、API 在国内）时由
+// config.js 提供国内 API 的地址，例如 "https://dns.example.com:3004"。
+// 同时必须把该页面的来源加进管理端设置里的「门户来源」，否则浏览器会拦下
+// 跨域请求。
+var API_BASE = (window.AGHUB_PORTAL_CONFIG && window.AGHUB_PORTAL_CONFIG.apiBase) || "";
+
+// 地址末尾的斜杠会让拼接出的路径变成 "//portal/api/…"，服务端会 404。
+if (API_BASE.slice(-1) === "/") {
+  API_BASE = API_BASE.slice(0, -1);
+}
 
 var PAGE_SIZE = 100;
 var MAX_KEPT = 1000;

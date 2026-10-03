@@ -6,6 +6,7 @@ import {
     usersBulkAdd,
     usersDelete,
     usersList,
+    portalPackage,
     usersPassword,
     usersReset,
     usersRestore,
@@ -228,6 +229,30 @@ export const setUserPassword = async (uid: string, password: string): Promise<bo
     await getUsers();
 
     return ok;
+};
+
+/**
+ * downloadPortalPackage saves the deployment package of the portal front-end.
+ *
+ * The response is a zip, so it is not parsed; the browser is handed a temporary
+ * object URL and downloads it.  The URL is revoked right away because the
+ * download has already started by then.
+ */
+export const downloadPortalPackage = async (): Promise<void> => {
+    try {
+        const blob = await portalPackage();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'aghub-portal.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        addSuccessToast(intl.getMessage('users_portal_package_downloaded'));
+    } catch (error) {
+        addErrorToast({ error });
+    }
 };
 
 export const toggleUsers = async (uids: string[], enabled: boolean) => {

@@ -23,8 +23,9 @@ import (
 // useless in the portal and the other way around.
 const portalSessionsFileName = "portal_sessions.db"
 
-// initPortal initializes the user portal and registers its handlers with reg.
-// reg must not apply the administrator authentication middleware.
+// initPortal initializes the user portal.  Its public handlers are registered
+// with reg, which must not apply the administrator authentication middleware,
+// and the administrator ones with adminReg, which must.
 //
 // It must be called after the user quota manager and the query log are
 // created, because the portal serves the users and reads their log entries.
@@ -32,6 +33,7 @@ func initPortal(
 	ctx context.Context,
 	baseLogger *slog.Logger,
 	reg aghhttp.Registrar,
+	adminReg aghhttp.Registrar,
 	workDir string,
 ) (err error) {
 	usersMgr := globalContext.users
@@ -60,6 +62,7 @@ func initPortal(
 	}
 
 	mgr.Register(reg)
+	mgr.RegisterAdmin(adminReg)
 
 	globalContext.portal = mgr
 

@@ -1076,5 +1076,14 @@
   "users_portal_password_hint": "The user signs in to the portal with their identifier and this password.",
   "users_portal_password_placeholder": "Leave empty to revoke the access",
   "users_portal_password_has_access": "This user can sign in to the portal.",
-  "users_portal_password_no_access": "This user has no portal access yet."
+  "users_portal_password_no_access": "This user has no portal access yet.",
+  "users_portal_deploy": "Portal deployment",
+  "users_portal_deploy_hint": "The portal front-end is plain static files and can be served from a domain of its own, talking to this AGHub over the API.  Fill in the address below, save, then download the package.",
+  "users_portal_api_base": "API address",
+  "users_portal_api_base_note": "Where the browser reaches the portal API, including the port if it is not the default.  Leave empty if the front-end is served by AGHub itself.",
+  "users_portal_origins": "Allowed origins",
+  "users_portal_origins_note": "One per line, for example https://portal.example.com.  A front-end on an origin that is not listed here will be refused by the browser.",
+  "users_portal_https_note": "The front-end must be served over HTTPS: the cross-site session cookie is dropped by the browser otherwise, and signing in fails without a clear error.",
+  "users_portal_download": "Download package",
+  "users_portal_package_downloaded": "Deployment package downloaded"
 }

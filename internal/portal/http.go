@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -30,6 +31,46 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	// The bundled front-end is served on the same origin as the API.  A
 	// deployment that hosts the front-end elsewhere simply ignores it.
 	m.registerStatic(reg)
+}
+
+// RegisterAdmin registers the portal handlers that the administrator uses.
+//
+// They must be registered on the administrator registrar, not on the one
+// [Manager.Register] uses, because they expose the deployment package and are
+// not for the portal users.
+func (m *Manager) RegisterAdmin(reg aghhttp.Registrar) {
+	reg.Register(http.MethodGet, "/control/portal/package", m.handlePackage)
+}
+
+// handlePackage is the handler for the GET /control/portal/package HTTP API.
+// It builds the deployment package of the front-end with the configured API
+// address baked in.
+func (m *Manager) handlePackage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	s := m.users.GetSettings()
+
+	b, err := Package(s.PortalAPIBase, s.PortalOrigins)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
+
+		return
+	}
+
+	l.InfoContext(ctx, "portal package built", "size", len(b), "api_base", s.PortalAPIBase)
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set(
+		"Content-Disposition",
+		fmt.Sprintf("attachment; filename=%q", PackageFileName),
+	)
+	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+
+	_, err = w.Write(b)
+	if err != nil {
+		l.ErrorContext(ctx, "writing the portal package", "err", err)
+	}
 }
 
 // allowedOrigin returns the value for the CORS headers when the request comes

@@ -1,0 +1,61 @@
+.dialog {
+    width: 520px;
+    max-width: calc(100vw - 32px);
+}
+
+.footer {
+    justify-content: flex-end;
+}
+
+/* The shared dialog body carries no horizontal padding of its own, while the
+   header and the footer each add 16px.  Padding the body keeps the fields on
+   the same left/right edge as the title and the buttons. */
+.body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 16px;
+}
+
+.hint,
+.note {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.input {
+    height: 34px;
+    font-size: 14px;
+}
+
+/* The origins are a list, one per line, so a textarea is the honest control. */
+.textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 8px;
+    background: var(--default-page-background);
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+
+    &::placeholder {
+        color: var(--default-description-text);
+    }
+
+    &:focus {
+        border-color: var(--product-primary-50);
+        outline: none;
+    }
+}

@@ -939,5 +939,14 @@
   "users_portal_password_hint": "用户用其标识和这个密码登录门户。",
   "users_portal_password_placeholder": "留空即撤销访问",
   "users_portal_password_has_access": "该用户可以登录门户。",
-  "users_portal_password_no_access": "该用户还没有门户访问权限。"
+  "users_portal_password_no_access": "该用户还没有门户访问权限。",
+  "users_portal_deploy": "门户部署",
+  "users_portal_deploy_hint": "门户前端是纯静态文件，可以放在自己的域名上，通过 API 与本机通信。填好下面的地址并保存，然后下载部署包。",
+  "users_portal_api_base": "API 地址",
+  "users_portal_api_base_note": "浏览器访问门户 API 的地址，端口不是默认值时要带上。如果前端由 AGHub 自己提供，留空即可。",
+  "users_portal_origins": "允许的来源",
+  "users_portal_origins_note": "每行一个，例如 https://portal.example.com。没列在这里的来源，浏览器会拦下它的请求。",
+  "users_portal_https_note": "前端必须用 HTTPS 提供：跨域会话 cookie 在非 HTTPS 下会被浏览器丢弃，登录会失败而且没有明显报错。",
+  "users_portal_download": "下载部署包",
+  "users_portal_package_downloaded": "部署包已下载"
 }

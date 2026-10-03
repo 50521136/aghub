@@ -1676,6 +1676,30 @@ export const usersPassword = async (
     });
 };
 
+export const getPortalPackageUrl = () => {
+    return `control/portal/package`;
+};
+
+/**
+ * @summary Download the deployment package of the portal front-end
+ *
+ * The response is a zip, which customFetch would decode as text and then fail
+ * to parse, so this single call goes through fetch and reads the body as a
+ * blob.  Everything else keeps using customFetch.
+ */
+export const portalPackage = async (options?: RequestInit): Promise<Blob> => {
+    const response = await fetch(getPortalPackageUrl(), {
+        ...options,
+        method: 'GET',
+    });
+
+    if (!response.ok) {
+        throw new Error(`${getPortalPackageUrl()} | ${response.status}`);
+    }
+
+    return response.blob();
+};
+
 export const getUsersToggleUrl = () => {
     return `control/users/toggle`;
 };
