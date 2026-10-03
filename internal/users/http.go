@@ -3,6 +3,8 @@ package users
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghhttp"
 )
@@ -13,7 +15,7 @@ type listResp struct {
 	Summary *Summary `json:"summary"`
 
 	// Settings is the manager-wide configuration.
-	Settings *Settings `json:"settings"`
+	Settings *settingsResponse `json:"settings"`
 
 	// Domain is the domain of the DoT/DoH endpoint, or an empty string when
 	// none is configured.  The UI appends it to a client identifier to build
@@ -122,7 +124,7 @@ type importReq struct {
 // settingsResp is the response of the GET /control/users/settings HTTP API.
 type settingsResp struct {
 	// Settings is the manager-wide configuration.
-	Settings *Settings `json:"settings"`
+	Settings *settingsResponse `json:"settings"`
 }
 
 // bulkAddReq is the request of the POST /control/users/bulk-add HTTP API.
@@ -234,7 +236,7 @@ func (m *Manager) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &settingsResp{Settings: m.GetSettings()})
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &settingsResp{Settings: settingsForAPI(m.GetSettings())})
 }
 
 // settingsReq is the request body of the POST /control/users/settings HTTP
@@ -243,10 +245,50 @@ func (m *Manager) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 // plain [Settings] would replace everything, and clearing the portal origins
 // by toggling an unrelated switch is not something an administrator can see.
 type settingsReq struct {
-	DenyUnmatched *bool     `json:"deny_unmatched,omitempty"`
-	UpdateProxy   *string   `json:"update_proxy,omitempty"`
-	PortalOrigins *[]string `json:"portal_origins,omitempty"`
-	PortalAPIBase *string   `json:"portal_api_base,omitempty"`
+	DenyUnmatched      *bool     `json:"deny_unmatched,omitempty"`
+	UpdateProxy        *string   `json:"update_proxy,omitempty"`
+	PortalOrigins      *[]string `json:"portal_origins,omitempty"`
+	PortalAPIBase      *string   `json:"portal_api_base,omitempty"`
+	PortalOpen         *bool     `json:"portal_open,omitempty"`
+	PortalEmailVerify  *bool     `json:"portal_email_verify,omitempty"`
+	PortalDefaultQuota *int64    `json:"portal_default_quota,omitempty"`
+	PortalDefaultDays  *int64    `json:"portal_default_days,omitempty"`
+	PortalAnnouncement *string   `json:"portal_announcement,omitempty"`
+	SMTPHost           *string   `json:"smtp_host,omitempty"`
+	SMTPPort           *int      `json:"smtp_port,omitempty"`
+	SMTPUser           *string   `json:"smtp_user,omitempty"`
+	SMTPPassword       *string   `json:"smtp_password,omitempty"`
+	SMTPFrom           *string   `json:"smtp_from,omitempty"`
+	SMTPPlain          *bool     `json:"smtp_plain,omitempty"`
+}
+
+// settingsResponse is the API representation of the settings.  The mail
+// password is replaced by a flag, so that a secret which is never serialised
+// cannot leak through a new field or a log line.
+type settingsResponse struct {
+	*Settings
+
+	// SMTPPasswordSet is true when a mail password is stored.
+	SMTPPasswordSet bool `json:"smtp_password_set"`
+}
+
+// settingsForAPI returns the settings as they are sent to a client.
+//
+// Embedding the settings promotes every field of them into the response, so
+// the copy has to be stripped of the secret before it is embedded.  Clearing
+// the field rather than relying on a JSON tag is what makes the secret
+// impossible to serialise, whatever tag it ends up with.
+func settingsForAPI(s *Settings) (r *settingsResponse) {
+	cp := *s
+	cp.PortalOrigins = slices.Clone(s.PortalOrigins)
+
+	passwordSet := cp.SMTPPassword != ""
+	cp.SMTPPassword = ""
+
+	return &settingsResponse{
+		Settings:        &cp,
+		SMTPPasswordSet: passwordSet,
+	}
 }
 
 // applyTo returns cur with the fields present in req replaced.
@@ -265,6 +307,52 @@ func (r *settingsReq) applyTo(cur *Settings) (s *Settings) {
 
 	if r.PortalAPIBase != nil {
 		cur.PortalAPIBase = *r.PortalAPIBase
+	}
+
+	if r.PortalOpen != nil {
+		cur.PortalOpen = *r.PortalOpen
+	}
+
+	if r.PortalEmailVerify != nil {
+		cur.PortalEmailVerify = *r.PortalEmailVerify
+	}
+
+	if r.PortalDefaultQuota != nil {
+		cur.PortalDefaultQuota = max(0, *r.PortalDefaultQuota)
+	}
+
+	if r.PortalDefaultDays != nil {
+		cur.PortalDefaultDays = max(0, *r.PortalDefaultDays)
+	}
+
+	if r.PortalAnnouncement != nil {
+		cur.PortalAnnouncement = *r.PortalAnnouncement
+	}
+
+	if r.SMTPHost != nil {
+		cur.SMTPHost = strings.TrimSpace(*r.SMTPHost)
+	}
+
+	if r.SMTPPort != nil {
+		cur.SMTPPort = *r.SMTPPort
+	}
+
+	if r.SMTPUser != nil {
+		cur.SMTPUser = strings.TrimSpace(*r.SMTPUser)
+	}
+
+	// An empty password means "keep the stored one", so that the administrator
+	// can change the host without retyping the secret.
+	if r.SMTPPassword != nil && *r.SMTPPassword != "" {
+		cur.SMTPPassword = *r.SMTPPassword
+	}
+
+	if r.SMTPFrom != nil {
+		cur.SMTPFrom = strings.TrimSpace(*r.SMTPFrom)
+	}
+
+	if r.SMTPPlain != nil {
+		cur.SMTPPlain = *r.SMTPPlain
 	}
 
 	return cur
@@ -314,7 +402,7 @@ func (m *Manager) handleList(w http.ResponseWriter, r *http.Request) {
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &listResp{
 		Users:    users,
 		Summary:  m.Summary(),
-		Settings: m.GetSettings(),
+		Settings: settingsForAPI(m.GetSettings()),
 		Domain:   m.Domain(),
 	})
 }

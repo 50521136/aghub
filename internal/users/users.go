@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/netip"
 	"slices"
 	"strings"
@@ -104,6 +105,15 @@ type User struct {
 
 	// Enabled is the administrator-controlled switch of the user.
 	Enabled bool `json:"enabled"`
+
+	// Email is the e-mail address of the user.  It is empty when the user
+	// registered without one.  At most one user may hold a given address.
+	Email string `json:"email,omitempty"`
+
+	// EmailVerified is true when the user has proved that the address in
+	// [User.Email] belongs to them.  It is only ever set together with an
+	// address, and it is cleared when the address changes.
+	EmailVerified bool `json:"email_verified,omitempty"`
 }
 
 const (
@@ -266,6 +276,57 @@ type Settings struct {
 	// different origin.  When it is empty, the front-end talks to the origin
 	// it was served from.
 	PortalAPIBase string `json:"portal_api_base,omitempty"`
+
+	// PortalOpen is true when anyone may create a portal account.  It is off
+	// by default, so a deployment that is not watched cannot be signed up to.
+	PortalOpen bool `json:"portal_open,omitempty"`
+
+	// PortalEmailVerify is true when signing up requires proving ownership of
+	// an e-mail address.  It has no effect while [Settings.PortalOpen] is
+	// false.  It also requires the SMTP settings below to be filled in.
+	PortalEmailVerify bool `json:"portal_email_verify,omitempty"`
+
+	// PortalDefaultQuota is the request quota given to a new portal account.
+	// Zero means unlimited.
+	PortalDefaultQuota int64 `json:"portal_default_quota,omitempty"`
+
+	// PortalDefaultDays is the number of days a new portal account stays
+	// valid for.  Zero means that it never expires.
+	PortalDefaultDays int64 `json:"portal_default_days,omitempty"`
+
+	// PortalAnnouncement is a free-form message shown to portal users, for
+	// example a maintenance notice.  Empty means that there is nothing to
+	// show.
+	PortalAnnouncement string `json:"portal_announcement,omitempty"`
+
+	// SMTPHost is the host name of the mail server used to send the
+	// verification codes of the portal.  Sending is disabled while it is
+	// empty.
+	SMTPHost string `json:"smtp_host,omitempty"`
+
+	// SMTPPort is the port of the mail server.  Zero means 587.
+	SMTPPort int `json:"smtp_port,omitempty"`
+
+	// SMTPUser is the user name for the mail server.
+	SMTPUser string `json:"smtp_user,omitempty"`
+
+	// SMTPPassword is the password for the mail server.  It is stored in the
+	// state file, which is only readable by the service account.
+	//
+	// It must never reach a client.  The API does not send the settings
+	// themselves but a copy made by [settingsForAPI], in which this field is
+	// replaced by a flag; an absent value in a request means "keep the stored
+	// one".  A tag of "-" is not an option, because the same struct is what
+	// gets written to disk.
+	SMTPPassword string `json:"smtp_password,omitempty"`
+
+	// SMTPFrom is the sender address of the verification messages.  Zero
+	// value means [Settings.SMTPUser].
+	SMTPFrom string `json:"smtp_from,omitempty"`
+
+	// SMTPPlain is true when the connection must be made without STARTTLS.
+	// It is only for a mail server on a trusted network.
+	SMTPPlain bool `json:"smtp_plain,omitempty"`
 }
 
 // Config is the configuration of a Manager.
@@ -384,6 +445,203 @@ func NewUID() (uid string, err error) {
 	}
 
 	return hex.EncodeToString(b), nil
+}
+
+// MinPortalPasswordLen is the shortest password accepted for a portal account.
+const MinPortalPasswordLen = 8
+
+// maxEmailLen is the longest accepted e-mail address.
+const maxEmailLen = 254
+
+// NormalizeEmail validates an e-mail address and returns its canonical form.
+// An empty input is not an error and yields an empty string.
+func NormalizeEmail(email string) (norm string, err error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", nil
+	}
+
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return "", fmt.Errorf("users: invalid e-mail address")
+	}
+
+	norm = strings.ToLower(addr.Address)
+	if len(norm) > maxEmailLen {
+		return "", fmt.Errorf("users: e-mail address is too long")
+	}
+
+	return norm, nil
+}
+
+// RegisterParams are the parameters of [Manager.Register].
+type RegisterParams struct {
+	// Name is the optional display name.  It defaults to the identifier.
+	Name string
+
+	// Password is the password of the new account.
+	Password string
+
+	// Email is the optional e-mail address.
+	Email string
+
+	// EmailVerified is true when the caller has already proved that the
+	// address belongs to the registrant.  An address that has not been proved
+	// is still stored, so that the user can prove it later, but it does not
+	// count as verified.
+	EmailVerified bool
+}
+
+// Register creates an account for a portal user.  The identifier is generated
+// here, is unique, and never changes; it is also what the user puts in front of
+// the domain of the DoT and DoH endpoints, so the account and the DNS identity
+// are the same thing by construction.
+//
+// The quota and the validity period come from the AGHub-wide settings, so the
+// administrator controls what a new account costs without touching the code.
+func (m *Manager) Register(p *RegisterParams) (u *User, err error) {
+	if p == nil {
+		return nil, fmt.Errorf("users: no parameters")
+	}
+
+	password := p.Password
+	if len(password) < MinPortalPasswordLen {
+		return nil, fmt.Errorf(
+			"users: password must be at least %d characters",
+			MinPortalPasswordLen,
+		)
+	}
+
+	email, err := NormalizeEmail(p.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	if email != "" && m.FindByEmail(email) != nil {
+		return nil, fmt.Errorf("users: e-mail address is already registered")
+	}
+
+	uid, err := m.freeUID()
+	if err != nil {
+		return nil, err
+	}
+
+	s := m.GetSettings()
+
+	name := strings.TrimSpace(p.Name)
+	if name == "" {
+		name = uid
+	}
+
+	var limit *int64
+	if s.PortalDefaultQuota > 0 {
+		l := s.PortalDefaultQuota
+		limit = &l
+	}
+
+	// The generated identifier is the only identifier of the account, which is
+	// what makes the binding between the account and the DNS identity unique.
+	u, err = m.Add(&AddParams{
+		UID:          uid,
+		Name:         name,
+		IDs:          []string{uid},
+		RequestLimit: limit,
+		Period:       PeriodDay,
+		ExpireDays:   s.PortalDefaultDays,
+		Enabled:      true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	u.Email = email
+	u.EmailVerified = email != "" && p.EmailVerified
+
+	err = m.SetPortalPassword(uid, password)
+	if err != nil {
+		// The account would be unusable without a password, so it must not be
+		// left behind half-created.
+		_ = m.Remove(uid)
+
+		return nil, err
+	}
+
+	m.mu.Lock()
+	m.dirty.Store(true)
+	m.mu.Unlock()
+
+	return u, nil
+}
+
+// freeUID returns a generated identifier that no user holds.
+func (m *Manager) freeUID() (uid string, err error) {
+	for range 8 {
+		uid, err = NewUID()
+		if err != nil {
+			return "", err
+		}
+
+		if m.Get(uid) == nil {
+			return uid, nil
+		}
+	}
+
+	return "", fmt.Errorf("users: could not generate a free identifier")
+}
+
+// FindByEmail returns the user holding the e-mail address, or nil.  The address
+// is compared in its canonical form.
+func (m *Manager) FindByEmail(email string) (u *User) {
+	norm, err := NormalizeEmail(email)
+	if err != nil || norm == "" {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, def := range m.defs {
+		if strings.EqualFold(def.Email, norm) {
+			return def
+		}
+	}
+
+	return nil
+}
+
+// SetEmail sets the e-mail address of the user.  An empty address clears it.
+// The address must not belong to another user.
+func (m *Manager) SetEmail(uid, email string, verified bool) (err error) {
+	norm, err := NormalizeEmail(email)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	def, ok := m.defs[uid]
+	if !ok {
+		return fmt.Errorf("users: no user with identifier %q", uid)
+	}
+
+	if norm != "" {
+		for otherUID, other := range m.defs {
+			if otherUID != uid && strings.EqualFold(other.Email, norm) {
+				return fmt.Errorf("users: e-mail address is already registered")
+			}
+		}
+	}
+
+	def.Email = norm
+	// A new address is never verified on its own, even when the previous one
+	// was: the proof belonged to the old address.
+	def.EmailVerified = norm != "" && verified
+
+	m.publishLocked()
+	m.dirty.Store(true)
+
+	return nil
 }
 
 // normalizePeriod returns a valid period, defaulting to [PeriodDay].
@@ -950,12 +1208,12 @@ func (m *Manager) GetSettings() (s *Settings) {
 		return &Settings{}
 	}
 
-	return &Settings{
-		PortalOrigins: slices.Clone(cur.PortalOrigins),
-		PortalAPIBase: cur.PortalAPIBase,
-		DenyUnmatched: cur.DenyUnmatched,
-		UpdateProxy:   cur.UpdateProxy,
-	}
+	// Return a copy so that a caller cannot change the stored settings by
+	// writing through the pointer it was handed.
+	cp := *cur
+	cp.PortalOrigins = slices.Clone(cur.PortalOrigins)
+
+	return &cp
 }
 
 // SetSettings replaces the manager-wide settings.
@@ -964,12 +1222,13 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 		return fmt.Errorf("users: settings are nil")
 	}
 
-	m.settings.Store(&Settings{
-		PortalOrigins: slices.Clone(s.PortalOrigins),
-		PortalAPIBase: s.PortalAPIBase,
-		DenyUnmatched: s.DenyUnmatched,
-		UpdateProxy:   s.UpdateProxy,
-	})
+	// Store the whole struct.  Rebuilding it field by field silently drops
+	// every field that is not named here, which is how the portal settings
+	// were lost on every save.
+	stored := *s
+	stored.PortalOrigins = slices.Clone(s.PortalOrigins)
+	m.settings.Store(&stored)
+
 	m.dirty.Store(true)
 
 	m.logger.Info(
@@ -1033,6 +1292,11 @@ func (m *Manager) Get(uid string) (u *User) {
 
 // AddParams are the parameters of a new user.
 type AddParams struct {
+	// UID is the identifier of the user.  When it is empty, one is generated.
+	// It is only set by callers that must know the identifier in advance,
+	// such as the portal sign-up.
+	UID string
+
 	// Name is the human-readable name of the user.
 	Name string
 
@@ -1076,9 +1340,12 @@ func (m *Manager) Add(p *AddParams) (u *User, err error) {
 		return nil, fmt.Errorf("users: no valid identifiers")
 	}
 
-	uid, err := NewUID()
-	if err != nil {
-		return nil, err
+	uid := strings.TrimSpace(p.UID)
+	if uid == "" {
+		uid, err = NewUID()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	now := m.now()
