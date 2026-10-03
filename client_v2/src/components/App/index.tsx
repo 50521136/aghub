@@ -32,6 +32,7 @@ import { BlockedServices } from '../BlockedServices';
 import { Clients } from '../Clients/Clients';
 import { Users } from '../Users';
 import { Update } from '../Update';
+import { Portal } from '../Portal';
 import { InactivitySchedule } from '../BlockedServices/InactivitySchedule';
 import { AddClient } from '../Clients/AddClient';
 import { Protection } from '../Clients/AddClient/blocks/Protection/Protection';
@@ -166,6 +167,7 @@ const App = () => {
             <Route path={Paths.Clients} component={Clients} />
             <Route path={Paths.Users} component={Users} />
             <Route path={Paths.Update} component={Update} />
+            <Route path={Paths.Portal} component={Portal} />
             <Route path="/" component={() => <Navigate href="/dashboard" />} />
         </HashRouter>
     );

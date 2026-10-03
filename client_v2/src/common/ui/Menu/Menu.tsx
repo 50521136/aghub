@@ -73,6 +73,19 @@ export const Menu = (props: Props) => {
                         </span>
                     </Link>
                 </div>
+                <div class={s.menuLinkWrapper}>
+                    <Link
+                        class={cn(s.menuLink, {
+                            [s.activeLink]: isActive(Paths.Portal),
+                        })}
+                        to={RoutePath.Portal}
+                    >
+                        <Icon class={s.linkIcon} icon="router" />
+                        <span class={theme.common.textOverflow}>
+                            {intl.getMessage('portal_title')}
+                        </span>
+                    </Link>
+                </div>
                 <AccordionSection
                     title={intl.getMessage('settings')}
                     icon="settings"

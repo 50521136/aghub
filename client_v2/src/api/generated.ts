@@ -80,6 +80,7 @@ import type {
     UsersImportRequest,
     UsersList,
     UsersToggleRequest,
+    PortalMailTestRequest,
     UsersPasswordRequest,
     UsersUIDsRequest,
     VersionInfo,
@@ -1698,6 +1699,25 @@ export const portalPackage = async (options?: RequestInit): Promise<Blob> => {
     }
 
     return response.blob();
+};
+
+export const getPortalMailTestUrl = () => {
+    return `control/portal/mail/test`;
+};
+
+/**
+ * @summary Send a test message through the configured mail server
+ */
+export const portalMailTest = async (
+    portalMailTestRequest: PortalMailTestRequest,
+    options?: RequestInit,
+): Promise<void> => {
+    return customFetch<void>(getPortalMailTestUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(portalMailTestRequest),
+    });
 };
 
 export const getUsersToggleUrl = () => {

@@ -1,0 +1,56 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 0 40px;
+    max-width: 720px;
+}
+
+.title {
+    margin: 0;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 12px;
+    background: var(--default-page-background);
+}
+
+.cardTitle {
+    margin: 0;
+}
+
+.hint {
+    margin: 0;
+    color: var(--default-description-text);
+}
+
+.field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.switchLabel {
+    cursor: pointer;
+}
+
+.row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.row > * {
+    flex: 1;
+    min-width: 0;
+}
+
+.footer {
+    display: flex;
+    justify-content: flex-end;
+}

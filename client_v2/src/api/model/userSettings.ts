@@ -8,4 +8,28 @@ export interface UserSettings {
     portal_origins?: string[];
     /** The address of the portal API as the browser reaches it. */
     portal_api_base?: string;
+    /** Whether anyone may create a portal account. */
+    portal_open?: boolean;
+    /** Whether signing up requires proving ownership of an e-mail address. */
+    portal_email_verify?: boolean;
+    /** The request quota given to a new portal account.  Zero means unlimited. */
+    portal_default_quota?: number;
+    /** The number of days a new portal account stays valid for.  Zero means it never expires. */
+    portal_default_days?: number;
+    /** A message shown to the portal users. */
+    portal_announcement?: string;
+    /** The host name of the mail server used for the verification codes. */
+    smtp_host?: string;
+    /** The port of the mail server. */
+    smtp_port?: number;
+    /** The user name for the mail server. */
+    smtp_user?: string;
+    /** The password for the mail server.  Never returned by the API. */
+    smtp_password?: string;
+    /** Whether a mail password is stored.  Read-only. */
+    smtp_password_set?: boolean;
+    /** The sender address of the verification messages. */
+    smtp_from?: string;
+    /** Whether to connect without STARTTLS. */
+    smtp_plain?: boolean;
 }

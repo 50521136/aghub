@@ -1473,6 +1473,57 @@
               'schema':
                 '$ref': '#/components/schemas/Error'
           'description': 'Server error.'
+  '/portal/package':
+    'get':
+      'tags':
+      - 'portal'
+      'operationId': 'portalPackage'
+      'summary': 'Download the deployment package of the portal front-end'
+      'responses':
+        '200':
+          'description': 'A zip archive of the front-end.'
+          'content':
+            'application/zip':
+              'schema':
+                'type': 'string'
+                'format': 'binary'
+        '401':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Unauthorized.'
+  '/portal/mail/test':
+    'post':
+      'tags':
+      - 'portal'
+      'operationId': 'portalMailTest'
+      'summary': 'Send a test message through the configured mail server'
+      'requestBody':
+        'content':
+          'application/json':
+            'schema':
+              '$ref': '#/components/schemas/PortalMailTestRequest'
+        'required': true
+      'responses':
+        '200':
+          'description': 'OK.'
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/OkResponse'
+        '400':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'Bad request.'
+        '502':
+          'content':
+            'application/json':
+              'schema':
+                '$ref': '#/components/schemas/Error'
+          'description': 'The mail server refused the message.'
   '/users/settings':
     'post':
       'tags':
@@ -2157,6 +2208,15 @@
         'replace':
           'type': 'boolean'
           'description': 'Must be true; the existing users are removed.'
+    'PortalMailTestRequest':
+      'type': 'object'
+      'properties':
+        'to':
+          'type': 'string'
+          'description': 'The address to send the test message to.'
+    'OkResponse':
+      'type': 'object'
+      'description': 'An empty successful response.'
     'UserSettings':
       'type': 'object'
       'description': 'The user management settings'
