@@ -263,3 +263,69 @@ func TestSettingsReqKeepsAbsentFields(t *testing.T) {
 		t.Errorf("expected the portal API address to be cleared, got %q", got.PortalAPIBase)
 	}
 }
+
+// TestSetSettingsRejectsHTTPSOriginWithPlainAPI checks the one combination of
+// portal settings that can never work: an HTTPS front-end cannot call a plain
+// HTTP API, because the browser blocks the request as mixed content and drops
+// the SameSite=None session cookie.
+func TestSetSettingsRejectsHTTPSOriginWithPlainAPI(t *testing.T) {
+	m, _ := newTestManager(t)
+
+	err := m.SetSettings(&Settings{
+		PortalAPIBase: "http://36.133.104.222:3000",
+		PortalOrigins: []string{"https://adguardhome.lv10.ren"},
+	})
+	if err == nil {
+		t.Fatal("expected the plain-HTTP API with an HTTPS origin to be refused")
+	}
+
+	if !strings.Contains(err.Error(), "portal_api_base") {
+		t.Fatalf("error should name the setting, got %q", err)
+	}
+
+	// Nothing may have been stored.
+	if got := m.GetSettings().PortalAPIBase; got != "" {
+		t.Fatalf("settings were stored despite the error: %q", got)
+	}
+}
+
+// TestSetSettingsAllowsTheWorkingCombinations makes sure the check above only
+// rejects the combination that is actually broken.
+func TestSetSettingsAllowsTheWorkingCombinations(t *testing.T) {
+	testCases := []struct {
+		name    string
+		apiBase string
+		origins []string
+	}{{
+		name:    "https api with https origin",
+		apiBase: "https://api.example.com",
+		origins: []string{"https://portal.example.com"},
+	}, {
+		name:    "plain api with plain origin",
+		apiBase: "http://192.0.2.1:3000",
+		origins: []string{"http://portal.example.com"},
+	}, {
+		name:    "plain api without origins",
+		apiBase: "http://192.0.2.1:3000",
+	}, {
+		name:    "no api base at all",
+		origins: []string{"https://portal.example.com"},
+	}, {
+		name:    "same origin, empty api base",
+		apiBase: "",
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _ := newTestManager(t)
+
+			err := m.SetSettings(&Settings{
+				PortalAPIBase: tc.apiBase,
+				PortalOrigins: tc.origins,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

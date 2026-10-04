@@ -299,6 +299,8 @@ input:focus, textarea:focus {
 .alert { border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-size: 13px; display: none; }
 .alert.show { display: block; }
 .alert.err { background: rgba(220, 38, 38, .09); color: var(--bad); }
+/* 全局网络告警在卡片之外，需要一个和卡片同一层级的底。 */
+#net-alert { background: #fff; box-shadow: var(--shadow); line-height: 1.7; }
 .alert.ok { background: rgba(5, 150, 105, .1); color: var(--good); }
 .notice {
   border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin-bottom: 14px;
@@ -386,6 +388,11 @@ a:hover { text-decoration: underline; }
 </head>
 <body>
 <div class="wrap">
+
+  <!-- 跨域部署失败时浏览器给的信息极其含糊：混合内容、CORS 未放行、
+       地址写错，都表现为 "Failed to fetch"。这条告警把它翻译成人能照着
+       修的说明，否则用户只看到"点了登录没反应"。 -->
+  <div id="net-alert" class="alert err"></div>
 
   <!-- 公共战报（未登录） -->
   <section id="public-view">
@@ -834,6 +841,38 @@ var HISTORY_DAYS = 30;
 
 var $ = function (id) { return document.getElementById(id); };
 
+function describeFailure() {
+  var pageProto = location.protocol.replace(":", "");
+  var apiProto = API_BASE ? API_BASE.split("://")[0] : pageProto;
+
+  if (API_BASE && pageProto === "https" && apiProto === "http") {
+    return "接口地址是明文 http，而本页是 https，浏览器会直接拦掉这个请求"
+      + "（混合内容）。请把 API 换成 https 地址——把前端改成 http 没有用。";
+  }
+
+  if (!API_BASE) {
+    return "页面在请求自己的地址，但接口不在这个地址上。独立部署的前端需要在"
+      + " config.js 里把 apiBase 指向 AGHub。";
+  }
+
+  return "连不上接口 " + API_BASE + "。按顺序排查："
+    + "① 在浏览器直接打开这个地址，看通不通（端口没放行、服务没起都会不通）；"
+    + "② 把本页来源 " + location.origin + " 加进管理端的「门户来源」，"
+    + "否则浏览器会拦下跨域请求；"
+    + "③ 接口用 https 时证书必须受浏览器信任。"
+    + "具体原因看浏览器控制台。";
+}
+
+function showNetAlert(msg) {
+  var el = $("net-alert");
+  if (el) { el.textContent = msg; el.classList.add("show"); }
+}
+
+function clearNetAlert() {
+  var el = $("net-alert");
+  if (el && el.classList.contains("show")) { el.classList.remove("show"); }
+}
+
 function api(path, opts) {
   opts = opts || {};
   return fetch(API_BASE + path, {
@@ -842,6 +881,14 @@ function api(path, opts) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     credentials: "include",
     cache: "no-store",
+  }).then(function (r) {
+    // 请求能到达就说明地址和跨域都通了，把上一次的告警撤掉。
+    // 4xx/5xx 是业务结果，不是部署问题，同样算"通"。
+    clearNetAlert();
+    return r;
+  }).catch(function (e) {
+    showNetAlert(describeFailure());
+    throw e;
   });
 }
 

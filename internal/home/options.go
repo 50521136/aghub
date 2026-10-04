@@ -53,6 +53,18 @@ type options struct {
 	// bindAddr is the address to serve the web UI on.
 	bindAddr netip.AddrPort
 
+	// webTLSCert and webTLSKey are the certificate and key files for the
+	// administrator web UI.  When both are empty the UI is served over
+	// plain HTTP, which is what every existing installation does.
+	webTLSCert string
+	webTLSKey  string
+
+	// portalTLSCert and portalTLSKey are the same for the user portal
+	// listener.  They are independent of the web UI so the two can be
+	// exposed with different certificates.
+	portalTLSCert string
+	portalTLSKey  string
+
 	// portalAddr is the address to serve the user portal on.  When it is
 	// invalid, the portal is served as a path of the web UI.
 	portalAddr netip.AddrPort
@@ -226,6 +238,42 @@ var cmdLineOpts = []cmdLineOpt{{
 		`listener of its own.`,
 	longName:  "portal-addr",
 	shortName: "",
+}, {
+	updateWithValue: func(o options, v string) (options, error) { o.webTLSCert = v; return o, nil },
+	updateNoValue:   nil,
+	effect:          nil,
+	serialize:       func(o options) (val string, ok bool) { return o.webTLSCert, o.webTLSCert != "" },
+	description: `Path to the TLS certificate for the web UI.  Together with ` +
+		`--web-tls-key it makes the web UI serve HTTPS, which a cross-origin ` +
+		`portal front-end requires: a page loaded over HTTPS cannot call an ` +
+		`HTTP API.`,
+	longName:  "web-tls-cert",
+	shortName: "",
+}, {
+	updateWithValue: func(o options, v string) (options, error) { o.webTLSKey = v; return o, nil },
+	updateNoValue:   nil,
+	effect:          nil,
+	serialize:       func(o options) (val string, ok bool) { return o.webTLSKey, o.webTLSKey != "" },
+	description:     `Path to the TLS private key for the web UI.`,
+	longName:        "web-tls-key",
+	shortName:       "",
+}, {
+	updateWithValue: func(o options, v string) (options, error) { o.portalTLSCert = v; return o, nil },
+	updateNoValue:   nil,
+	effect:          nil,
+	serialize:       func(o options) (val string, ok bool) { return o.portalTLSCert, o.portalTLSCert != "" },
+	description: `Path to the TLS certificate for the portal listener.  ` +
+		`Together with --portal-tls-key it makes the portal serve HTTPS.`,
+	longName:  "portal-tls-cert",
+	shortName: "",
+}, {
+	updateWithValue: func(o options, v string) (options, error) { o.portalTLSKey = v; return o, nil },
+	updateNoValue:   nil,
+	effect:          nil,
+	serialize:       func(o options) (val string, ok bool) { return o.portalTLSKey, o.portalTLSKey != "" },
+	description:     `Path to the TLS private key for the portal listener.`,
+	longName:        "portal-tls-key",
+	shortName:       "",
 }, {
 	updateWithValue: func(o options, v string) (options, error) {
 		o.serviceControlAction = v

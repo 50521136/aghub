@@ -653,6 +653,16 @@ type webConfig struct {
 	// must not be nil.
 	mux *http.ServeMux
 
+	// webTLSCert and webTLSKey enable HTTPS on the administrator web UI.
+	// Empty means plain HTTP.
+	webTLSCert string
+	webTLSKey  string
+
+	// portalTLSCert and portalTLSKey enable HTTPS on the portal
+	// listener, independently of the web UI.
+	portalTLSCert string
+	portalTLSKey  string
+
 	// portalAddr is the address to serve the user portal on.  When it is
 	// invalid, the portal is served as a path of the web UI instead.
 	portalAddr netip.AddrPort
@@ -687,7 +697,31 @@ type webConfig struct {
 }
 
 // newWeb initializes the web module.  conf must not be nil.
+// checkTLSPair returns an error when a certificate is set without its key or the
+// other way round.  Such a listener accepts the connection and then fails the
+// handshake, which in a browser looks like an empty page.
+func checkTLSPair(what, cert, key string) (err error) {
+	if (cert == "") != (key == "") {
+		return fmt.Errorf("%s TLS: certificate and key must be set together", what)
+	}
+
+	return nil
+}
+
 func newWeb(ctx context.Context, conf *webConfig) (web *webAPI, err error) {
+	// A certificate without its key, or the other way round, starts a listener
+	// that cannot complete a single handshake.  The browser then shows an empty
+	// page and the log says nothing useful, so refuse to start instead.
+	err = checkTLSPair("web", conf.webTLSCert, conf.webTLSKey)
+	if err != nil {
+		return nil, err
+	}
+
+	err = checkTLSPair("portal", conf.portalTLSCert, conf.portalTLSKey)
+	if err != nil {
+		return nil, err
+	}
+
 	logger := conf.baseLogger.With(slogutil.KeyPrefix, "webapi")
 
 	webPort := suggestedWebPort(ctx, logger)
@@ -709,6 +743,10 @@ func newWeb(ctx context.Context, conf *webConfig) (web *webAPI, err error) {
 	webConf := &webAPIConfig{
 		PortalAddr:         conf.portalAddr,
 		PortalMux:          conf.portalMux,
+		WebTLSCert:         conf.webTLSCert,
+		WebTLSKey:          conf.webTLSKey,
+		PortalTLSCert:      conf.portalTLSCert,
+		PortalTLSKey:       conf.portalTLSKey,
 		CommandConstructor: executil.SystemCommandConstructor{},
 		updater:            conf.updater,
 		logger:             logger,
@@ -884,6 +922,10 @@ func run(
 	conf := &webConfig{
 		portalAddr:     opts.portalAddr,
 		portalMux:      portalMux,
+		webTLSCert:     opts.webTLSCert,
+		webTLSKey:      opts.webTLSKey,
+		portalTLSCert:  opts.portalTLSCert,
+		portalTLSKey:   opts.portalTLSKey,
 		clientBuildFS:  clientBuildFS,
 		updater:        upd,
 		opts:           opts,

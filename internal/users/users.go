@@ -1222,6 +1222,19 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 		return fmt.Errorf("users: settings are nil")
 	}
 
+	// An HTTPS front-end can never call a plain HTTP API: the browser blocks
+	// the request as mixed content, and the cross-origin session cookie is
+	// dropped because SameSite=None requires Secure.  The combination fails
+	// with nothing but "Failed to fetch" in the console, so refuse it here
+	// instead of letting the administrator deploy something that cannot log in.
+	if isPlainHTTP(s.PortalAPIBase) && hasHTTPSOrigin(s.PortalOrigins) {
+		return fmt.Errorf(
+			"portal_api_base is plain HTTP while portal_origins has an HTTPS " +
+				"origin: browsers block that combination, so set an HTTPS API " +
+				"address (see --web-tls-cert)",
+		)
+	}
+
 	// Store the whole struct.  Rebuilding it field by field silently drops
 	// every field that is not named here, which is how the portal settings
 	// were lost on every save.
@@ -1238,6 +1251,22 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 	)
 
 	return nil
+}
+
+// isPlainHTTP reports whether raw is an http:// URL.
+func isPlainHTTP(raw string) (ok bool) {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(raw)), "http://")
+}
+
+// hasHTTPSOrigin reports whether any of the origins is served over HTTPS.
+func hasHTTPSOrigin(origins []string) (ok bool) {
+	for _, o := range origins {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(o)), "https://") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SetUpdateProxy stores the online-update acceleration prefix, keeping the

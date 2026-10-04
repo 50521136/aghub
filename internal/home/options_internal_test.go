@@ -257,3 +257,66 @@ func TestOptsToArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestTLSOptions checks that the TLS flags of the web UI and of the portal
+// listener are parsed and serialised independently of each other.
+func TestTLSOptions(t *testing.T) {
+	const (
+		webCert  = "/etc/ssl/web.crt"
+		webKey   = "/etc/ssl/web.key"
+		portCert = "/etc/ssl/portal.crt"
+		portKey  = "/etc/ssl/portal.key"
+	)
+
+	o := testParseOK(t,
+		"--web-tls-cert", webCert,
+		"--web-tls-key", webKey,
+		"--portal-tls-cert", portCert,
+		"--portal-tls-key", portKey,
+	)
+	assert.Equal(t, webCert, o.webTLSCert)
+	assert.Equal(t, webKey, o.webTLSKey)
+	assert.Equal(t, portCert, o.portalTLSCert)
+	assert.Equal(t, portKey, o.portalTLSKey)
+
+	// Without the flags everything stays empty, which is what keeps plain HTTP
+	// the default for existing installations.
+	empty := testParseOK(t)
+	assert.Empty(t, empty.webTLSCert)
+	assert.Empty(t, empty.portalTLSCert)
+}
+
+// TestCheckTLSPair checks the refusal to start with half of a TLS pair.
+func TestCheckTLSPair(t *testing.T) {
+	testCases := []struct {
+		name    string
+		cert    string
+		key     string
+		wantErr bool
+	}{{
+		name: "both empty",
+	}, {
+		name: "both set",
+		cert: "c", key: "k",
+	}, {
+		name:    "cert without key",
+		cert:    "c",
+		wantErr: true,
+	}, {
+		name:    "key without cert",
+		key:     "k",
+		wantErr: true,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkTLSPair("web", tc.cert, tc.key)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "web TLS")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

@@ -83,6 +83,35 @@ systemctl enable --now aghub
 
 配置文件默认为工作目录下的 `AdGuardHome.yaml`，与上游格式相同，可直接沿用已有的 AdGuard Home 配置。
 
+## 给 Web UI 和门户启用 HTTPS
+
+跨域部署门户（前端在别的域名上）时 **API 必须是 HTTPS**：HTTPS 页面无法请求
+明文 HTTP 接口（浏览器按混合内容拦掉），而且跨域登录的 cookie 带
+`SameSite=None; Secure`，在明文 HTTP 下会被直接丢弃。两种情况的症状都是
+"点了登录没反应"。
+
+AGHub 自带 HTTPS，不需要反向代理：
+
+```sh
+aghub -w /opt/aghub --web-addr 0.0.0.0:3000 \
+  --web-tls-cert /path/fullchain.pem \
+  --web-tls-key  /path/privkey.pem
+```
+
+门户跑在独立监听器上时用另一组参数，两组互不影响：
+
+```sh
+  --portal-addr 0.0.0.0:3004 \
+  --portal-tls-cert /path/fullchain.pem \
+  --portal-tls-key  /path/privkey.pem
+```
+
+证书和私钥必须同时给；只给一个会拒绝启动（只给证书的监听器能接受连接但握手
+永远失败，浏览器里就是一张白页）。
+
+用 nginx 反代也可以，但必须设置 `X-Forwarded-Proto: https`，否则 AGHub 会以为
+自己在明文 HTTP 上，下发的 cookie 不带 `Secure`，跨域登录同样失败。
+
 ## 在线更新的配置
 
 更新源在编译期通过 ldflags 写入（发布脚本已自动处理）：

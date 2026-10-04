@@ -163,8 +163,18 @@ func readme(apiBase string, origins []string) (b []byte) {
 		sb.WriteString("   这个页面必须部署在其中一个来源上，否则浏览器会拦下跨域请求。\n\n")
 	}
 
-	sb.WriteString("4. 必须用 HTTPS 提供这个页面。跨域登录用的 cookie 带 SameSite=None，\n")
-	sb.WriteString("   浏览器在非 HTTPS 下会直接丢弃它，登录会失败而且没有明显报错。\n\n")
+	sb.WriteString("4. 必须用 HTTPS 提供这个页面，API 也必须是 HTTPS。跨域登录用的\n")
+	sb.WriteString("   cookie 带 SameSite=None，浏览器在非 HTTPS 下会直接丢弃它；\n")
+	sb.WriteString("   而 HTTPS 页面又无法请求明文 HTTP 的接口（混合内容会被拦掉）。\n")
+	sb.WriteString("   两者都表现为\"登录没反应\"，前端页面会显示一条说明告诉你具体是哪一种。\n\n")
+
+	sb.WriteString("   AGHub 自带 HTTPS，不需要额外的反向代理：\n")
+	sb.WriteString("     aghub -w /opt/aghub --web-addr 0.0.0.0:3000 \\\n")
+	sb.WriteString("       --web-tls-cert /path/fullchain.pem \\\n")
+	sb.WriteString("       --web-tls-key  /path/privkey.pem\n")
+	sb.WriteString("   证书和私钥必须同时给，只给一个 AGHub 会拒绝启动。\n")
+	sb.WriteString("   用 nginx 反代也可以，但必须设置 X-Forwarded-Proto: https，\n")
+	sb.WriteString("   否则 AGHub 会以为自己在明文 HTTP 上，cookie 同样会被丢弃。\n\n")
 
 	sb.WriteString("5. 页面本身没有任何配置项，改地址请改 config.js 里的 apiBase。\n")
 

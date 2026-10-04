@@ -84,6 +84,16 @@ type webAPIConfig struct {
 	// invalid, the portal is served as a path of the web UI instead.
 	PortalAddr netip.AddrPort
 
+	// WebTLSCert and WebTLSKey enable HTTPS on the web UI.  When they are
+	// empty the UI is served over plain HTTP.
+	WebTLSCert string
+	WebTLSKey  string
+
+	// PortalTLSCert and PortalTLSKey enable HTTPS on the portal listener,
+	// independently of the web UI.
+	PortalTLSCert string
+	PortalTLSKey  string
+
 	// PortalMux serves the user portal on a listener of its own.  It is only
 	// used when PortalAddr is valid.
 	PortalMux *http.ServeMux
@@ -376,9 +386,11 @@ func (web *webAPI) start(ctx context.Context) {
 		logger := web.baseLogger.With(loggerKeyServer, "plain")
 		hdlr := web.wrapMux(logger)
 
-		// Enable unencrypted HTTP/2, e.g. for proxies.
+		// Enable unencrypted HTTP/2, e.g. for proxies, and HTTP/2 over TLS
+		// for the HTTPS case.
 		protocols := &http.Protocols{}
 		protocols.SetUnencryptedHTTP2(true)
+		protocols.SetHTTP2(true)
 		protocols.SetHTTP1(true)
 
 		// Create a new instance, because the Web is not usable after Shutdown.
@@ -393,6 +405,16 @@ func (web *webAPI) start(ctx context.Context) {
 		}
 		go func() {
 			defer slogutil.RecoverAndLog(ctx, logger)
+
+			if web.conf.WebTLSCert != "" {
+				logger.InfoContext(ctx, "starting TLS server", "addr", web.httpServer.Addr)
+
+				errs <- web.httpServer.ListenAndServeTLS(
+					web.conf.WebTLSCert, web.conf.WebTLSKey,
+				)
+
+				return
+			}
 
 			logger.InfoContext(ctx, "starting plain server", "addr", web.httpServer.Addr)
 
@@ -436,9 +458,19 @@ func (web *webAPI) startPortalServer(ctx context.Context) {
 	go func() {
 		defer slogutil.RecoverAndExit(ctx, logger, osutil.ExitCodeFailure)
 
-		logger.InfoContext(ctx, "starting portal server", "addr", addr.String())
+		var err error
+		if web.conf.PortalTLSCert != "" {
+			logger.InfoContext(ctx, "starting portal server", "addr", addr.String(), "tls", true)
 
-		err := web.portalServer.ListenAndServe()
+			err = web.portalServer.ListenAndServeTLS(
+				web.conf.PortalTLSCert, web.conf.PortalTLSKey,
+			)
+		} else {
+			logger.InfoContext(ctx, "starting portal server", "addr", addr.String(), "tls", false)
+
+			err = web.portalServer.ListenAndServe()
+		}
+
 		if !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
