@@ -3,44 +3,62 @@
 <head>
 <!-- Inline so that a portal on a listener of its own never asks the origin for
      a favicon it does not serve. -->
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="%232f6feb"/><path d="M9.5 16.5l4.5 4.5 8.5-10" fill="none" stroke="%23fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'>
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%231d4ed8"/><path d="M16 7l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6z" fill="%23fff"/></svg>'>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="referrer" content="same-origin">
 <title>我的 DNS 账号</title>
 <style>
-/* 版式参照 NextDNS：不用卡片堆叠，改用细分隔线组织区块，区块之间留白充足，
-   技术性取值一律等宽字体并配复制按钮。 */
+/* 版式参照 23-4.cn 的 DNS 战报：浅蓝灰底 + 白色圆角卡片 + 极柔和的蓝调阴影，
+   一个主色（蓝）配两个只当状态信号用的高饱和点缀（绿、红）。数字是视觉主角，
+   所以标签在上、数字在下，字号落差拉得很开。 */
 :root {
-  --bg: #ffffff; --panel: #fafafa; --fg: #16181d; --muted: #6b7280;
-  --line: #e8e8ec; --line-soft: #f1f1f4; --accent: #2563eb; --accent-fg: #fff;
-  --bad: #d1242f; --good: #16a34a; --warn: #b45309; --track: #e4e7ec;
-  --code-bg: #f7f8fa;
+  --bg: #f3f6fd;
+  --card: #ffffff;
+  --fg: #17223f;
+  --muted: #5a6b8c;
+  --dim: #5f7099;
+  --line: #e1eaf5;
+  --accent: #1d4ed8;
+  --accent-soft: rgba(29, 78, 216, .08);
+  --accent-softer: rgba(29, 78, 216, .04);
+  --good: #047857;
+  --good-bright: #10b981;
+  --bad: #b91c1c;
+  --warn: #92400e;
+  --track: #e6edf9;
+  --shadow: 0 4px 18px rgba(30, 100, 180, .07);
+  --shadow-lift: 0 10px 30px rgba(23, 34, 63, .10);
+  --radius: 16px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e0f12; --panel: #15161a; --fg: #e8eaee; --muted: #9aa1ad;
-    --line: #26282e; --line-soft: #1c1e23; --accent: #4c8dff; --accent-fg: #0b0d11;
-    --bad: #f85149; --good: #3fb950; --warn: #d29922; --track: #2b2f37;
-    --code-bg: #17181c;
+    --bg: #0d1424; --card: #161f33; --fg: #e8eefc; --muted: #a8b8d6;
+    --dim: #93a4c4; --line: #253148; --accent: #5b8cff;
+    --accent-soft: rgba(91, 140, 255, .14); --accent-softer: rgba(91, 140, 255, .07);
+    --good: #34d399; --good-bright: #34d399; --bad: #f87171; --warn: #fbbf24;
+    --track: #1e2a42;
+    --shadow: 0 4px 18px rgba(0, 0, 0, .35);
+    --shadow-lift: 0 10px 30px rgba(0, 0, 0, .45);
   }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
   background: var(--bg); color: var(--fg); min-height: 100vh;
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC",
         "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
-.wrap {
-  max-width: 860px; margin: 0 auto;
-  padding: 20px calc(18px + env(safe-area-inset-right))
-           calc(64px + env(safe-area-inset-bottom))
-           calc(18px + env(safe-area-inset-left));
-}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.muted { color: var(--muted); }
+.dim { color: var(--dim); }
+.small { font-size: 13px; }
+.tiny { font-size: 12px; }
+.hidden { display: none !important; }
+.center { text-align: center; }
 /* .row 是一行内联控件；按钮不能被 flex 拉伸，否则会出现"大方块里一个小字"。 */
 .row { display: flex; align-items: center; gap: 8px; }
 .row > button { flex: 0 0 auto; }
@@ -48,162 +66,282 @@ body {
 /* 输入框和按钮并排时高度必须一样，否则右边缘参差。输入框的高度由字体和
    内边距决定，所以让按钮撑满整行，而不是各自写死一个高度。 */
 .ctrl-row > button { align-self: stretch; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
-.tiny { font-size: 12px; }
-.hidden { display: none !important; }
-.center { text-align: center; }
+/* 数字用等宽数字，位数变化时不会左右跳动 */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* ---------- 骨架 ---------- */
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding: 18px calc(16px + env(safe-area-inset-right))
+           calc(104px + env(safe-area-inset-bottom))
+           calc(16px + env(safe-area-inset-left));
+}
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 18px; margin-bottom: 14px;
+}
+/* 主卡片带一层几乎看不出的蓝→青渐变，避免整片死白 */
+.card.grad {
+  background: linear-gradient(150deg,
+    rgba(29, 78, 216, .05) 0%, rgba(16, 185, 129, .04) 55%, var(--card) 100%);
+}
 
 /* ---------- 页头 ---------- */
 .topbar {
-  display: flex; align-items: center; gap: 12px; justify-content: space-between;
-  padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  margin-bottom: 16px;
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.brand h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -.01em;
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent);
-        flex: 0 0 auto; display: grid; place-items: center; color: var(--accent-fg);
-        font-size: 14px; font-weight: 700; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good);
-       flex: 0 0 auto; }
-.dot.bad { background: var(--bad); }
-.dot.warn { background: var(--warn); }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand h1 {
+  font-size: 16px; margin: 0; font-weight: 600; letter-spacing: -.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mark {
+  width: 28px; height: 28px; border-radius: 9px; flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--accent), #4f7cf7);
+  display: grid; place-items: center; color: #fff; font-size: 14px;
+  font-weight: 700; box-shadow: 0 3px 10px rgba(29, 78, 216, .3);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: 0 0 auto; }
+.dot.on { background: var(--good-bright); box-shadow: 0 0 0 4px rgba(16, 185, 129, .16); }
+.dot.off { background: var(--dim); }
 
-/* ---------- 区块 ---------- */
-.sect { padding: 30px 0; border-bottom: 1px solid var(--line-soft); }
-.sect:last-child { border-bottom: 0; }
-.sect-head { margin-bottom: 16px; }
-.sect-head h2 { font-size: 16px; margin: 0 0 3px; font-weight: 600;
-                letter-spacing: -.005em; }
-.sect-head p { margin: 0; font-size: 13px; color: var(--muted); }
+/* ---------- 药丸 ---------- */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px; font-size: 12px; line-height: 1.4;
+  background: var(--accent-soft); color: var(--accent); white-space: nowrap;
+}
+.pill.good { background: rgba(5, 150, 105, .1); color: var(--good); }
+.pill.bad { background: rgba(220, 38, 38, .1); color: var(--bad); }
+.pill.warn { background: rgba(217, 119, 6, .12); color: var(--warn); }
+/* 灰色药丸的底是淡灰蓝叠在渐变卡上，比纯白底更暗，所以文字要比 --muted 再深一档
+   才够 4.5:1。 */
+.pill.grey { background: rgba(118, 136, 171, .12); color: #55668a; }
+.pill .dot { width: 6px; height: 6px; box-shadow: none; }
+
+/* ---------- 大数字 ---------- */
+.hero { text-align: center; padding: 8px 0 4px; }
+.hero h2 {
+  font-size: 25px; margin: 0 0 8px; font-weight: 700; letter-spacing: -.02em;
+}
+.hero p { margin: 0; color: var(--muted); font-size: 14px; }
+.stat-label { text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.stat-num {
+  text-align: center; font-size: 44px; line-height: 1.15; font-weight: 700;
+  color: var(--accent); letter-spacing: -.03em; word-break: break-all;
+}
+.stat-num.small-num { font-size: 32px; }
+.stat-line { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+/* 拦截/放行/拦截率 单独成格，而不是挂在总量下面当"拆分" —— 两个数取自不同
+   口径（总量按计费周期累计，这两项取自日志保留窗口），写成一行会被读成
+   "拦截 + 放行 应当等于总量"。 */
+.statgrid { display: flex; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.statgrid > div { flex: 1 1 0; text-align: center; border-left: 1px solid var(--line); }
+.statgrid > div:first-child { border-left: 0; }
+.statgrid .gv { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
+.statgrid .gk { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.statgrid #stat-rate { color: var(--accent); }
+.stat-line b { color: var(--fg); font-weight: 600; }
 
 /* ---------- 键值行 ---------- */
-.kv { display: flex; align-items: center; gap: 16px; padding: 11px 0;
-      border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
-.kv:first-of-type { border-top: 0; }
-.kv > .k { flex: 0 0 132px; font-size: 13px; color: var(--muted); }
-.kv > .v { flex: 1 1 220px; min-width: 0; }
+.kv {
+  display: flex; align-items: center; gap: 14px; padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.kv:first-child { border-top: 0; padding-top: 0; }
+.kv:last-child { padding-bottom: 0; }
+.kv > .k { flex: 0 0 96px; font-size: 13px; color: var(--muted); }
+.kv > .v { flex: 1 1 auto; min-width: 0; }
 
-/* ---------- 等宽取值框 ---------- */
+/* ---------- 接入地址 ---------- */
 .endpoint {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  background: var(--code-bg); border: 1px solid var(--line);
-  border-radius: 8px; padding: 9px 8px 9px 11px;
+  background: var(--accent-softer); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 8px 10px 12px;
 }
 /* 换行而不是省略号：地址被截断的话，用户没法确认自己复制了什么。 */
 .endpoint code {
   flex: 1 1 auto; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo,
   Consolas, monospace; font-size: 12.5px; overflow-wrap: break-word;
 }
-.endpoint.copied { border-color: var(--good); }
+.endpoint.copied { border-color: var(--good); background: rgba(5, 150, 105, .07); }
 .endpoint.copied code { color: var(--good); }
 .copy {
-  flex: 0 0 auto; border: 1px solid var(--line); background: var(--bg);
-  color: var(--muted); padding: 5px 10px; border-radius: 6px; cursor: pointer;
-  font-size: 12px; min-height: 0; line-height: 1.3;
+  flex: 0 0 auto; border: 1px solid var(--line); background: var(--card);
+  color: var(--accent); padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  font-size: 12px; min-height: 36px; line-height: 1.4; font-weight: 600;
 }
-.copy:hover { border-color: var(--accent); color: var(--accent); }
+.copy:hover { background: var(--accent-soft); }
 
 /* ---------- 表单 ---------- */
 button {
-  font: inherit; border: 1px solid var(--line); background: var(--bg);
-  color: var(--fg); border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  font: inherit; border: 1px solid var(--line); background: var(--card);
+  color: var(--fg); border-radius: 10px; padding: 8px 14px; cursor: pointer;
   min-height: 38px; font-size: 14px; white-space: nowrap;
 }
-button:hover { border-color: var(--muted); }
-button.primary { background: var(--accent); border-color: var(--accent);
-                 color: var(--accent-fg); font-weight: 600; }
-button.primary:hover { filter: brightness(1.08); }
-button.quiet { border-color: transparent; color: var(--muted); }
-button.quiet:hover { border-color: var(--line); color: var(--fg); }
+button:hover { border-color: var(--dim); }
+button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  font-weight: 600; box-shadow: 0 4px 14px rgba(29, 78, 216, .22);
+}
+button.primary:hover { filter: brightness(1.06); }
+button.quiet { border-color: transparent; background: transparent; color: var(--muted); }
+button.quiet:hover { color: var(--accent); background: var(--accent-softer); }
 button:disabled { opacity: .5; cursor: default; }
 button.wide { width: 100%; }
 button.small { font-size: 13px; padding: 7px 12px; min-height: 36px; }
 input, textarea {
-  font: inherit; width: 100%; padding: 10px 12px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
-  min-height: 40px;
+  font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg);
+  min-height: 42px;
 }
-input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px;
-                              border-color: transparent; }
+input:focus, textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .field { margin-bottom: 14px; }
-.field > label { display: block; font-size: 13px; color: var(--muted);
-                 margin-bottom: 6px; }
+.field > label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 
-/* ---------- 用量 ---------- */
-.usage-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.usage-num { font-size: 26px; font-weight: 650; letter-spacing: -.02em; }
-.bar { height: 6px; border-radius: 3px; background: var(--track);
-       overflow: hidden; margin: 12px 0 8px; }
-.bar > i { display: block; height: 100%; background: var(--accent);
-           border-radius: 3px; transition: width .3s; }
-.bar.over > i { background: var(--bad); }
-.pill { padding: 2px 9px; border-radius: 999px; font-size: 12px;
-        border: 1px solid var(--line); color: var(--muted); }
-.pill.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
-.pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
-.pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+/* ---------- 用量条 ---------- */
+.bar {
+  height: 8px; border-radius: 999px; background: var(--track);
+  overflow: hidden; margin: 14px 0 10px;
+}
+.bar > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #4f7cf7);
+  transition: width .35s ease;
+}
+.bar.over > i { background: linear-gradient(90deg, var(--bad), #f87171); }
 
 /* ---------- 图表 ---------- */
 /* 固定 30 个槽位，缺失的日子画成空槽；柱子有宽度上限，所以只有一天数据时也能
    看出它在时间轴上的位置，而不是一根占满宽度的色块。 */
-.spark { display: flex; align-items: flex-end; gap: 2px; height: 52px;
-         padding-bottom: 2px; border-bottom: 1px solid var(--line); }
-.spark > span { flex: 1 1 0; max-width: 18px; height: 100%; border-radius: 3px;
-                background: var(--track); opacity: .55; display: flex;
-                align-items: flex-end; overflow: hidden; }
-.spark > span > i { display: block; width: 100%; height: 0; background: var(--accent);
-                    border-radius: 3px; }
+.spark {
+  display: flex; align-items: flex-end; gap: 2px; height: 60px;
+  padding-bottom: 2px; border-bottom: 1px solid var(--line);
+}
+.spark > span {
+  flex: 1 1 0; max-width: 18px; height: 100%; border-radius: 3px;
+  background: var(--track); opacity: .6; display: flex;
+  align-items: flex-end; overflow: hidden;
+}
+.spark > span > i {
+  display: block; width: 100%; height: 0;
+  background: linear-gradient(180deg, #4f7cf7, var(--accent));
+  border-radius: 3px;
+}
 /* 描边画在盒内，否则最右边那根（就是"今天"）会贴到容器边界被裁掉。 */
-.spark > span.today { outline: 1px solid var(--accent); outline-offset: -1px; }
-.axis { display: flex; justify-content: space-between; margin-top: 6px;
-        font-size: 11px; color: var(--muted); }
+.spark > span.today { outline: 1.5px solid var(--accent); outline-offset: -1px; }
+.axis {
+  display: flex; justify-content: space-between; margin-top: 8px;
+  font-size: 11px; color: var(--muted);
+}
 
 /* ---------- 日志 ---------- */
 /* flex 行而不是 table：table-layout:auto 会让 text-overflow: ellipsis 失效，
    超长域名会被硬切掉。 */
-.spinner { display: inline-block; width: 13px; height: 13px; margin-right: 8px;
-           border: 2px solid var(--track); border-top-color: var(--accent);
-           border-radius: 50%; vertical-align: -2px;
-           animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
-.logrow { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0;
-          border-top: 1px solid var(--line-soft); }
+.logrow {
+  display: flex; gap: 12px; align-items: flex-start; padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
 .logrow:first-child { border-top: 0; }
-.logrow > .pill { flex: 0 0 auto; margin-top: 1px; }
+.logrow > .pill { flex: 0 0 auto; margin-top: 2px; }
 .logmain { flex: 1 1 auto; min-width: 0; }
-.logmain .host { font-size: 14px; overflow: hidden; text-overflow: ellipsis;
-                 white-space: nowrap; }
+.logmain .host {
+  font-size: 14px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-weight: 500;
+}
 .logmain .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
 .metarow { display: flex; flex-wrap: wrap; row-gap: 2px; }
 .metarow > span { white-space: nowrap; }
 /* 分隔符由 CSS 前缀生成并跟随它后面的那一项，换行时不会在行尾留下孤立的"·"。 */
 .metarow > span + span::before { content: " · "; }
 
+/* ---------- 教程步骤 ---------- */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+/* 圆点用 flex 对齐，不用绝对定位：绝对定位的 top 是按行高估的，一旦某一步
+   折成两行，圆点就相对第一行漂移，三步看上去高矮不齐。 */
+.steps > li {
+  counter-increment: step; display: flex; align-items: flex-start; gap: 10px;
+  padding: 6px 0; font-size: 13.5px; color: var(--muted);
+}
+.steps > li::before {
+  content: counter(step); flex: 0 0 auto; margin-top: 1px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 11px; font-weight: 700; display: grid; place-items: center;
+}
+.steps > li > span { flex: 1 1 auto; min-width: 0; }
+.steps > li b { color: var(--fg); font-weight: 600; }
+
+/* 同一张卡里列"三种平台"而不是"三个步骤"时不该编号，否则会被读成有先后顺序。 */
+.plats { margin: 0; padding: 0; list-style: none; }
+.plats > li {
+  display: flex; align-items: flex-start; gap: 10px; padding: 6px 0;
+  font-size: 13.5px; color: var(--muted);
+}
+.plats > li > b {
+  flex: 0 0 78px; color: var(--fg); font-weight: 600; font-size: 13px;
+}
+.plats > li > span { flex: 1 1 auto; min-width: 0; }
+
 /* ---------- 提示 ---------- */
-.alert { border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px;
-         display: none; }
+.alert { border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-size: 13px; display: none; }
 .alert.show { display: block; }
-.alert.err { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
-.alert.ok { background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
-.notice { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px;
-          margin: 22px 0 0; }
+.alert.err { background: rgba(220, 38, 38, .09); color: var(--bad); }
+.alert.ok { background: rgba(5, 150, 105, .1); color: var(--good); }
+.notice {
+  border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin-bottom: 14px;
+}
 .notice h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
-.notice p { margin: 0; font-size: 13px; white-space: pre-wrap; color: var(--fg); }
+.notice p { margin: 0; font-size: 13px; white-space: pre-wrap; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* ---------- 底部导航 ---------- */
+/* 悬浮在内容之上，而不是把内容顶上去；这是那个页面最有辨识度的一处。 */
+.tabs {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: min(520px, calc(100% - 28px));
+  display: flex; z-index: 30;
+  background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+  box-shadow: var(--shadow-lift); padding: 6px;
+}
+.tabs > button {
+  flex: 1 1 0; border: 0; background: transparent; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 7px 4px; min-height: 0; border-radius: 13px; font-size: 11px;
+}
+.tabs > button svg { width: 20px; height: 20px; display: block; }
+.tabs > button.on { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.tabs > button:hover { color: var(--accent); }
+
+/* ---------- 加载态 ---------- */
+.spinner {
+  display: inline-block; width: 13px; height: 13px; margin-right: 8px;
+  border: 2px solid var(--track); border-top-color: var(--accent);
+  border-radius: 50%; vertical-align: -2px; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
 /* ---------- 窄屏 ---------- */
 @media (max-width: 560px) {
-  .sect { padding: 26px 0; }
-  .kv { gap: 4px; }
+  .wrap {
+    padding-left: calc(14px + env(safe-area-inset-left));
+    padding-right: calc(14px + env(safe-area-inset-right));
+  }
+  .stat-num { font-size: 38px; }
+  .hero h2 { font-size: 22px; }
+  .kv { gap: 4px; flex-wrap: wrap; }
   .kv > .k { flex: 0 0 100%; }
   .kv > .v { flex: 1 1 100%; }
   .endpoint code { font-size: 11.5px; }
-  .usage-num { font-size: 22px; }
+  .card { padding: 16px; }
 }
 </style>
 </head>
@@ -212,14 +350,15 @@ a:hover { text-decoration: underline; }
 
   <!-- 登录 -->
   <section id="login-view">
-    <div class="topbar" style="border-bottom:0;padding-bottom:0;margin-bottom:22px">
+    <div class="topbar">
       <div class="brand">
         <div class="mark">A</div>
         <h1>我的 DNS 账号</h1>
       </div>
+      <span class="pill grey"><span class="dot"></span>TLS 加密传输</span>
     </div>
 
-    <div style="max-width:400px">
+    <div style="max-width:400px;margin:0 auto">
       <div id="login-alert" class="alert err"></div>
       <form id="login-form" autocomplete="on">
         <div class="field">
@@ -244,14 +383,14 @@ a:hover { text-decoration: underline; }
 
   <!-- 注册 -->
   <section id="register-view" class="hidden">
-    <div class="topbar" style="border-bottom:0;padding-bottom:0;margin-bottom:22px">
+    <div class="topbar">
       <div class="brand">
         <div class="mark">A</div>
         <h1>注册账号</h1>
       </div>
     </div>
 
-    <div style="max-width:440px">
+    <div style="max-width:440px;margin:0 auto">
       <div id="register-alert" class="alert err"></div>
       <form id="register-form" autocomplete="on">
         <div class="field">
@@ -294,18 +433,12 @@ a:hover { text-decoration: underline; }
 
   <!-- 面板 -->
   <section id="panel-view" class="hidden">
+
     <div class="topbar">
       <div class="brand">
-        <div class="mark">A</div>
-        <div style="min-width:0">
-          <h1 id="account-name">—</h1>
-          <div class="tiny muted mono" id="account-id">—</div>
-        </div>
+        <h1 id="account-name">—</h1>
       </div>
-      <div class="row" style="gap:8px;flex-wrap:nowrap">
-        <span class="pill" id="status-pill">—</span>
-        <button id="logout-btn" class="quiet small">退出</button>
-      </div>
+      <span class="pill" id="status-pill">—</span>
     </div>
 
     <div id="panel-alert" class="alert err"></div>
@@ -315,99 +448,240 @@ a:hover { text-decoration: underline; }
       <p id="announcement-text"></p>
     </div>
 
-    <section class="sect">
-      <div class="sect-head">
-        <h2>用量</h2>
-        <p id="usage-desc">当前计费周期内已经解析的查询次数。</p>
-      </div>
-      <div class="usage-line">
-        <span class="usage-num mono" id="usage-num">—</span>
-        <span class="small muted" id="usage-sub"></span>
-      </div>
-      <div class="bar" id="usage-bar"><i style="width:0"></i></div>
-      <div class="kv" id="row-reset">
-        <div class="k">下次重置</div>
-        <div class="v mono small" id="usage-reset">—</div>
-      </div>
-      <div class="kv" id="row-expire">
-        <div class="k">到期时间</div>
-        <div class="v mono small" id="usage-expire">—</div>
-      </div>
-      <div class="kv">
-        <div class="k">有效期剩余</div>
-        <div class="v" id="usage-left">—</div>
-      </div>
-    </section>
+    <!-- 概览 -->
+    <div class="tabview" id="tab-report">
 
-    <section class="sect">
-      <div class="sect-head">
-        <h2>接入配置</h2>
-        <p>把下面的地址填进设备或路由器，就可以开始使用。</p>
-      </div>
-      <div id="endpoints"></div>
-      <p class="tiny muted" id="hosts-hint" style="margin:12px 0 0"></p>
-    </section>
-
-    <section class="sect" id="history-card">
-      <div class="sect-head">
-        <h2>最近 30 天</h2>
-        <p id="history-hint">每天的查询次数。</p>
-      </div>
-      <div class="spark" id="spark"></div>
-      <div class="axis"><span id="axis-start"></span><span id="axis-peak"></span><span id="axis-end"></span></div>
-    </section>
-
-    <section class="sect">
-      <div class="sect-head">
-        <h2>查询日志</h2>
-        <p>最近经过本服务的解析记录。</p>
-      </div>
-      <div class="row ctrl-row" style="margin-bottom:12px;flex-wrap:nowrap">
-        <input id="log-term" placeholder="按域名筛选，留空看全部" style="flex:1">
-        <button id="log-refresh" class="small">刷新</button>
-      </div>
-      <div id="log-body"><p class="small muted" style="margin:0"><span class="spinner"></span>正在加载查询日志…</p></div>
-      <div class="row" style="margin-top:12px">
-        <button id="log-more" class="wide small hidden">加载更多</button>
-      </div>
-    </section>
-
-    <section class="sect">
-      <div class="sect-head">
-        <h2>账号设置</h2>
-        <p>邮箱用来接收验证码；标识由系统分配，不可更改。</p>
-      </div>
-
-      <div class="kv">
-        <div class="k">邮箱</div>
-        <div class="v">
-          <div class="row ctrl-row" style="gap:8px;flex-wrap:nowrap">
-            <input id="email-input" type="email" placeholder="you@example.com" style="flex:1">
-            <button id="email-code-btn" class="small" type="button">发验证码</button>
-          </div>
-          <div class="row ctrl-row" style="gap:8px;margin-top:8px;flex-wrap:nowrap">
-            <input id="email-code" inputmode="numeric" placeholder="验证码" style="flex:1">
-            <button id="email-bind-btn" class="small primary" type="button">绑定</button>
-            <button id="email-clear-btn" class="small hidden" type="button">解绑</button>
-          </div>
-          <p class="tiny muted" id="email-hint" style="margin:8px 0 0"></p>
+      <div class="card grad">
+        <div class="center" style="margin-bottom:14px">
+          <span class="pill grey" id="conn-pill"><span class="dot"></span>检测中…</span>
+        </div>
+        <div class="hero">
+          <h2 id="hero-title">正在读取…</h2>
+          <p id="hero-sub">稍等，正在统计你的查询记录</p>
         </div>
       </div>
 
-      <div class="kv">
-        <div class="k">修改密码</div>
-        <div class="v">
-          <input id="pass-old" type="password" autocomplete="current-password"
-                 placeholder="当前密码">
-          <input id="pass-new" type="password" autocomplete="new-password"
-                 placeholder="新密码（至少 8 位）" style="margin-top:8px">
-          <div class="row" style="margin-top:10px">
-            <button id="pass-btn" class="small" type="button">修改密码</button>
+      <div class="card">
+        <div class="stat-label">我的解析总量 · 自开通以来</div>
+        <div class="stat-num num" id="stat-total">—</div>
+        <div class="stat-line" id="stat-total-note"></div>
+
+        <div class="statgrid">
+          <div>
+            <div class="gv num" id="stat-blocked">—</div>
+            <div class="gk">拦截</div>
           </div>
-          <p class="tiny muted" id="pass-hint" style="margin:8px 0 0"></p>
+          <div>
+            <div class="gv num" id="stat-allowed">—</div>
+            <div class="gk">放行</div>
+          </div>
+          <div>
+            <div class="gv num" id="stat-rate">—</div>
+            <div class="gk">拦截率</div>
+          </div>
+        </div>
+        <p class="tiny dim center" id="stats-note" style="margin:10px 0 0"></p>
+      </div>
+
+      <div class="card">
+        <div class="stat-label">当前计费周期</div>
+        <div class="stat-num small-num num" id="usage-num">—</div>
+        <div class="stat-line" id="usage-sub"></div>
+        <div class="bar" id="usage-bar"><i style="width:0"></i></div>
+        <p class="tiny muted center" id="usage-desc" style="margin:0"></p>
+
+        <div style="margin-top:16px">
+          <div class="kv" id="row-reset">
+            <div class="k">下次重置</div>
+            <div class="v mono small" id="usage-reset">—</div>
+          </div>
+          <div class="kv" id="row-expire">
+            <div class="k">到期时间</div>
+            <div class="v mono small" id="usage-expire">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">有效期剩余</div>
+            <div class="v" id="usage-left">—</div>
+          </div>
         </div>
       </div>
-    </section>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:12px">本次访问</div>
+        <div class="kv">
+          <div class="k">公网 IP</div>
+          <div class="v mono small" id="client-ip">—</div>
+        </div>
+        <div class="kv">
+          <div class="k">当前设备</div>
+          <div class="v small" id="client-device">—</div>
+        </div>
+        <p class="tiny dim" style="margin:12px 0 0">
+          只向你本人展示你自己的 IP；其他用户的 IP 一律脱敏。
+        </p>
+      </div>
+
+      <div class="card" id="history-card">
+        <div class="stat-label" style="margin-bottom:14px">最近 30 天</div>
+        <div class="spark" id="spark"></div>
+        <div class="axis">
+          <span id="axis-start"></span><span id="axis-end"></span>
+        </div>
+        <p class="tiny muted center" id="history-hint" style="margin:10px 0 0"></p>
+        <p class="tiny dim center" id="axis-peak" style="margin:6px 0 0"></p>
+      </div>
+    </div>
+
+    <!-- 接入 -->
+    <div class="tabview hidden" id="tab-setup">
+      <div class="card grad">
+        <div class="hero" style="padding:0">
+          <h2>改一次 DNS 设置即可</h2>
+          <p>配置完成后回到「概览」，即可看到你的查询战报。</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:14px">你的专属接入地址</div>
+        <div id="endpoints"></div>
+        <p class="tiny muted" id="hosts-hint" style="margin:12px 0 0"></p>
+      </div>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:6px">安卓手机</div>
+        <p class="tiny muted" style="margin:0 0 12px">系统原生私人 DNS · 3 步完成</p>
+        <ol class="steps">
+          <li><span>打开 <b>设置 → 网络和互联网 → 私人 DNS</b></span></li>
+          <li><span>选择 <b>指定主机名</b></span></li>
+          <li><span>填入 <b id="step-dot">DoT 主机名</b>，保存</span></li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:6px">iPhone / iPad</div>
+        <p class="tiny muted" style="margin:0 0 12px">手动填写，或用描述文件一键启用</p>
+        <ol class="steps">
+          <li><span>打开 <b>设置 → 通用 → VPN 与设备管理 → DNS</b></span></li>
+          <li><span>选择 <b>加密 DNS</b>，填入 <b id="step-doh">DoH 地址</b></span></li>
+          <li><span>保存后回到「概览」查看战报</span></li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:6px">电脑 / 路由器</div>
+        <p class="tiny muted" style="margin:0 0 12px">系统或固件支持加密 DNS 时直接填入地址</p>
+        <ul class="plats">
+          <li><b>Windows 11</b><span><b>设置 → 网络和 Internet → DNS</b>，填入 DoH 地址</span></li>
+          <li><b>macOS</b><span><b>系统设置 → 网络 → DNS</b>，或安装描述文件</span></li>
+          <li><b>路由器</b><span>在 DHCP 的 DNS 设置里填入 DoT / DoH</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 日志 -->
+    <div class="tabview hidden" id="tab-log">
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:12px">查询日志</div>
+        <div class="row ctrl-row" style="margin-bottom:14px;flex-wrap:nowrap">
+          <input id="log-term" placeholder="按域名筛选，留空看全部" style="flex:1">
+          <button id="log-refresh" class="small">刷新</button>
+        </div>
+        <div id="log-body">
+          <p class="small muted" style="margin:0">
+            <span class="spinner"></span>正在加载查询日志…
+          </p>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button id="log-more" class="wide small hidden">加载更多</button>
+        </div>
+        <p class="tiny dim" style="margin:12px 0 0">
+          只显示你自己的记录；这里只统计与展示你本人的解析，不向任何人公开。
+        </p>
+      </div>
+    </div>
+
+    <!-- 账号 -->
+    <div class="tabview hidden" id="tab-me">
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:12px">账号</div>
+        <div class="kv">
+          <div class="k">专属标识</div>
+          <div class="v mono small" id="account-id">—</div>
+        </div>
+        <div class="kv">
+          <div class="k">邮箱</div>
+          <div class="v small" id="email-shown">未绑定</div>
+        </div>
+        <p class="tiny dim" style="margin:12px 0 0">
+          标识由系统分配，<b>不可更改</b>；它就是你的 DoT / DoH 域名前缀。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:12px">邮箱</div>
+        <div class="row ctrl-row" style="gap:8px;flex-wrap:nowrap">
+          <input id="email-input" type="email" placeholder="you@example.com" style="flex:1">
+          <button id="email-code-btn" class="small" type="button">发验证码</button>
+        </div>
+        <div class="row ctrl-row" style="gap:8px;margin-top:10px;flex-wrap:nowrap">
+          <input id="email-code" inputmode="numeric" placeholder="验证码" style="flex:1">
+          <button id="email-bind-btn" class="small primary" type="button">绑定</button>
+          <button id="email-clear-btn" class="small hidden" type="button">解绑</button>
+        </div>
+        <p class="tiny muted" id="email-hint" style="margin:10px 0 0"></p>
+      </div>
+
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:12px">修改密码</div>
+        <input id="pass-old" type="password" autocomplete="current-password"
+               placeholder="当前密码">
+        <input id="pass-new" type="password" autocomplete="new-password"
+               placeholder="新密码（至少 8 位）" style="margin-top:10px">
+        <div class="row" style="margin-top:12px">
+          <button id="pass-btn" class="small" type="button">修改密码</button>
+        </div>
+        <p class="tiny muted" id="pass-hint" style="margin:10px 0 0"></p>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <span class="small muted">已登录：<span id="me-name">—</span></span>
+          <button id="logout-btn" class="small quiet">退出登录</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <nav class="tabs hidden" id="tabs">
+      <button type="button" data-tab="report" class="on">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17l5-6 4 4 5-7 4 5"/><path d="M3 21h18"/>
+        </svg>
+        概览
+      </button>
+      <button type="button" data-tab="setup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/>
+        </svg>
+        接入
+      </button>
+      <button type="button" data-tab="log">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5h16M4 12h16M4 19h10"/>
+        </svg>
+        日志
+      </button>
+      <button type="button" data-tab="me">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>
+        </svg>
+        账号
+      </button>
+    </nav>
   </section>
 
 </div>
@@ -432,6 +706,7 @@ if (API_BASE.slice(-1) === "/") {
 
 var PAGE_SIZE = 100;
 var MAX_KEPT = 1000;
+var HISTORY_DAYS = 30;
 
 var $ = function (id) { return document.getElementById(id); };
 
@@ -446,10 +721,12 @@ function api(path, opts) {
   });
 }
 
-function showAlert(el, msg) {
+function showAlert(el, msg, kind) {
   el.textContent = msg || "";
-  el.classList.toggle("show", !!msg);
+  el.className = "alert " + (kind || "err") + (msg ? " show" : "");
 }
+
+function fmtNum(n) { return (n || 0).toLocaleString(); }
 
 function fmtDate(sec) {
   if (!sec) { return "—"; }
@@ -470,18 +747,19 @@ function fmtLeft(sec) {
 }
 
 var STATUS = {
-  active: ["正常", "ok"],
-  disabled: ["已停用", "bad"],
+  active: ["正常", "good"],
+  disabled: ["已停用", "grey"],
   expired: ["已到期", "bad"],
   over_quota: ["已超额", "bad"],
   expiring_soon: ["即将到期", "warn"],
 };
 
-/* ---------- 登录 ---------- */
+/* ---------- 视图切换 ---------- */
 
 function showLogin(msg) {
   $("panel-view").classList.add("hidden");
   $("register-view").classList.add("hidden");
+  $("tabs").classList.add("hidden");
   $("login-view").classList.remove("hidden");
   showAlert($("login-alert"), msg);
 }
@@ -490,64 +768,98 @@ function showPanel() {
   $("login-view").classList.add("hidden");
   $("register-view").classList.add("hidden");
   $("panel-view").classList.remove("hidden");
+  $("tabs").classList.remove("hidden");
 }
 
 function showRegister() {
   $("login-view").classList.add("hidden");
   $("panel-view").classList.add("hidden");
+  $("tabs").classList.add("hidden");
   $("register-view").classList.remove("hidden");
   showAlert($("register-alert"), "");
 }
 
-$("login-form").addEventListener("submit", function (e) {
-  e.preventDefault();
-  var btn = $("login-btn");
-  btn.disabled = true;
-  showAlert($("login-alert"), "");
-
-  api("/portal/api/login", {
-    method: "POST",
-    body: { login: $("login-name").value, password: $("login-pass").value },
-  }).then(function (r) {
-    if (r.ok) { return r.json(); }
-    if (r.status === 401) { throw new Error("标识或密码不对"); }
-    if (r.status === 429) { throw new Error("尝试太频繁，请过一会儿再试"); }
-    throw new Error("登录失败（HTTP " + r.status + "）");
-  }).then(function (d) {
-    $("login-pass").value = "";
-    showPanel();
-    renderUser(d.user);
-    return loadLog(true);
-  }).catch(function (err) {
-    showAlert($("login-alert"), err.message);
-  }).finally(function () {
-    btn.disabled = false;
+// showTab 切换面板内的分页。四个视图都在 DOM 里，只是隐藏，所以切回来时
+// 不需要重新请求。
+function showTab(name) {
+  ["report", "setup", "log", "me"].forEach(function (t) {
+    var v = $("tab-" + t);
+    if (v) { v.classList.toggle("hidden", t !== name); }
   });
-});
-
-$("logout-btn").addEventListener("click", function () {
-  api("/portal/api/logout", { method: "POST" }).finally(function () {
-    log = [];
-    showLogin("已退出");
+  Array.prototype.forEach.call($("tabs").children, function (b) {
+    b.classList.toggle("on", b.getAttribute("data-tab") === name);
   });
-});
+  window.scrollTo(0, 0);
+}
 
-/* ---------- 账号 ---------- */
+/* ---------- 概览 ---------- */
 
 function renderUser(u) {
   if (!u) { return; }
 
   $("account-name").textContent = u.name || u.uid;
   $("account-id").textContent = u.uid;
+  $("me-name").textContent = u.name || u.uid;
 
-  var st = STATUS[u.status] || [u.status || "未知", ""];
+  var st = STATUS[u.status] || [u.status || "未知", "grey"];
   var pill = $("status-pill");
   pill.textContent = st[0];
-  pill.className = st[1] ? "pill " + st[1] : "pill";
+  pill.className = "pill " + st[1];
 
+  renderConnection(u);
+  renderStats(u);
   renderEndpoints(u);
   renderUsage(u);
   renderHistory(u.history, u);
+  renderAccount(u);
+}
+
+// renderConnection 决定这一页的"主角"是哪句话：接上了就说查询正在生效，
+// 没接上就直接给出下一步该干什么。
+function renderConnection(u) {
+  var c = u.client || {};
+  var on = !!c.connected;
+
+  var cp = $("conn-pill");
+  cp.className = "pill " + (on ? "good" : "grey");
+  cp.innerHTML = '<span class="dot ' + (on ? "on" : "off") + '"></span>' +
+    (on ? "已连接加密 DNS" : "未检测到加密 DNS 连接");
+
+  if (on) {
+    $("hero-title").textContent = "加密查询正在生效";
+    $("hero-sub").textContent = u.last_seen
+      ? "最近一次查询：" + fmtDate(u.last_seen)
+      : "设备正在使用本服务解析";
+  } else {
+    $("hero-title").textContent = u.last_seen ? "设备当前未接入" : "设备尚未接入";
+    $("hero-sub").textContent = "到「接入」页按提示配置一次，回到这里即可看到战报";
+  }
+
+  $("client-ip").textContent = c.ip || "—";
+  $("client-device").textContent = c.device || "未知设备";
+}
+
+function renderStats(u) {
+  var c = u.client || {};
+
+  $("stat-total").textContent = fmtNum(u.total_requests);
+  $("stat-total-note").textContent = u.period === "total"
+    ? "自开通以来累计"
+    : "按当前计费周期累计，重置后重新计数";
+
+  $("stat-blocked").textContent = fmtNum(c.blocked);
+  $("stat-allowed").textContent = fmtNum(c.allowed);
+
+  var scanned = c.scanned || 0;
+  $("stat-rate").textContent = scanned
+    ? Math.round((c.blocked || 0) / scanned * 100) + "%"
+    : "—";
+
+  // 日志是环形缓冲，所以这两个数是"最近若干条"而不是某个时间段，和上面的
+  // 总量也不是一回事。必须把口径写出来，否则 3 + 29 对不上 15 会像是数据错了。
+  $("stats-note").textContent = scanned
+    ? "拦截与放行取自最近 " + fmtNum(scanned) + " 条查询记录（日志保留窗口），与总量口径不同"
+    : "还没有查询记录，接入后这里会显示拦截情况";
 }
 
 /* ---------- 接入配置 ---------- */
@@ -580,7 +892,7 @@ function endpointRow(label, value, note) {
   btn.className = "copy";
   btn.type = "button";
   btn.textContent = "复制";
-  btn.addEventListener("click", function () { copy(value, box); });
+  btn.addEventListener("click", function () { copy(value, box, btn); });
   box.appendChild(btn);
 
   v.appendChild(box);
@@ -598,30 +910,44 @@ function endpointRow(label, value, note) {
   return row;
 }
 
+// setStepHosts 让教程里的措辞指向真实的接入地址：有主机名时是"上面的…"，
+// 没有时就改成"管理员给你的…"，不会留下一句指不到东西的指示。
+function setStepHosts(hasHosts) {
+  var dot = $("step-dot");
+  var doh = $("step-doh");
+  if (dot) { dot.textContent = hasHosts ? "上面的 DoT 主机名" : "管理员给你的 DoT 主机名"; }
+  if (doh) { doh.textContent = hasHosts ? "上面的 DoH 地址" : "管理员给你的 DoH 地址"; }
+}
+
 function renderEndpoints(u) {
   var box = $("endpoints");
   box.textContent = "";
 
   var list = u.hosts || [];
   if (list.length === 0) {
+    // 没有主机名时不能只留一句话：下面安卓和 iPhone 的教程要"填入上面的
+    // 主机名/地址"，上面什么都没有的话那两步就没法照做。
     var p = document.createElement("p");
     p.className = "small muted";
     p.style.margin = "0";
-    p.textContent = "你的账号是按来源地址识别的，直接用管理员给你的 DNS 地址即可，"
-      + "不需要在客户端里填写主机名。";
+    p.textContent = "你的账号是按来源地址识别的，没有专属主机名 —— "
+      + "直接用管理员给你的 DNS 服务器地址即可。";
     box.appendChild(p);
+
     $("hosts-hint").textContent = "";
+    setStepHosts(false);
 
     return;
   }
 
   list.forEach(function (h) {
-    box.appendChild(endpointRow("DoT", h, "在客户端里填这个主机名，端口 853。"));
+    box.appendChild(endpointRow("DoT", h, "安卓「私人 DNS」填入这个主机名，端口 853。"));
     box.appendChild(endpointRow("DoH", "https://" + h + "/dns-query",
-      "直接把这个地址粘进支持 DoH 的浏览器或系统设置里。"));
+      "iPhone、Windows、浏览器里直接填入这个地址。"));
   });
 
   $("hosts-hint").textContent = "";
+  setStepHosts(true);
 }
 
 /* ---------- 用量 ---------- */
@@ -631,10 +957,11 @@ function renderUsage(u) {
   var limit = u.request_limit;
   var unlimited = !limit || limit < 0;
 
-  $("usage-num").textContent = used.toLocaleString();
-  $("usage-sub").textContent = unlimited
-    ? "次（不限量）"
-    : " / " + limit.toLocaleString() + " 次";
+  $("usage-num").textContent = fmtNum(used);
+  $("usage-sub").innerHTML = unlimited
+    ? "不限量"
+    : "配额 <b>" + fmtNum(limit) + "</b> 次 · 剩余 <b>" +
+      fmtNum(Math.max(0, limit - used)) + "</b> 次";
 
   var bar = $("usage-bar");
   var fill = bar.querySelector("i");
@@ -662,11 +989,11 @@ function renderUsage(u) {
   setRow("row-expire", "usage-expire", u.expires_at ? fmtDate(u.expires_at) : "");
 
   var left = fmtLeft(u.remaining_seconds);
-  $("usage-left").textContent = left || "—";
-  $("usage-left").className = "v";
+  var el = $("usage-left");
+  el.className = "v";
+  el.textContent = left || "—";
   if (left && u.remaining_seconds > 0 && u.remaining_seconds < 3 * 86400) {
-    $("usage-left").className = "v pill warn";
-    $("usage-left").style.display = "inline-block";
+    el.innerHTML = '<span class="pill warn">' + left + "后到期</span>";
   }
 }
 
@@ -679,14 +1006,13 @@ function setRow(rowID, valueID, value) {
   $(valueID).textContent = value || "—";
 }
 
-function copy(text, el) {
+function copy(text, el, btn) {
   var done = function () {
     el.classList.add("copied");
-    var t = el.querySelector(".tiny");
-    if (t) { t.textContent = "已复制"; }
+    if (btn) { btn.textContent = "已复制"; }
     setTimeout(function () {
       el.classList.remove("copied");
-      if (t) { t.textContent = "复制"; }
+      if (btn) { btn.textContent = "复制"; }
     }, 1400);
   };
   if (navigator.clipboard && window.isSecureContext) {
@@ -706,8 +1032,6 @@ function copy(text, el) {
   }
 }
 
-var HISTORY_DAYS = 30;
-
 function fmtDay(d) {
   var p = function (n) { return (n < 10 ? "0" : "") + n; };
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
@@ -725,9 +1049,7 @@ function renderHistory(history, u) {
   history.forEach(function (p) { byDate[p.date] = p.requests; });
 
   // 以服务端给的最后一天为锚点，避免浏览器时区与服务端不一致。
-  var last = history.length
-    ? history[history.length - 1].date
-    : fmtDay(new Date());
+  var last = history.length ? history[history.length - 1].date : fmtDay(new Date());
   var parts = last.split("-");
   var end = new Date(+parts[0], +parts[1] - 1, +parts[2]);
 
@@ -746,7 +1068,7 @@ function renderHistory(history, u) {
     if (n === undefined) {
       b.title = date + "：无记录";
     } else {
-      // 填充占整格高度的比例，最少 8% 以免少量用量看不见。
+      // 填充占整格高度的比例，最少 6% 以免少量用量看不见。
       fill.style.height = Math.max(6, Math.round(n / max * 100)) + "%";
       b.title = date + "：" + n + " 次";
     }
@@ -762,7 +1084,7 @@ function renderHistory(history, u) {
 
   // 柱高是按 max 满格的，不标出来就没人知道一格代表多少。
   $("axis-peak").textContent = history.length
-    ? "满格 " + max.toLocaleString() + " 次"
+    ? "柱高满格代表 " + fmtNum(max) + " 次"
     : "";
 
   var total = 0;
@@ -773,12 +1095,12 @@ function renderHistory(history, u) {
       "还没有用量记录，有查询之后这里会显示最近 30 天的趋势。";
   } else if (history.length === 1) {
     $("history-hint").textContent =
-      history[0].date + "，共 " + total.toLocaleString() +
-      " 次请求（只有一天数据）。";
+      history[0].date.slice(5) + "，共 " + fmtNum(total) + " 次请求（只有一天数据）。";
   } else {
+    // 和坐标轴一样只写月-日：同一张卡里两种时间格式会让人以为说的不是同一件事。
     $("history-hint").textContent =
-      history[0].date + " 至 " + last + "，共 " +
-      total.toLocaleString() + " 次请求。";
+      history[0].date.slice(5) + " 至 " + last.slice(5) + "，共 " +
+      fmtNum(total) + " 次请求。";
   }
 }
 
@@ -799,50 +1121,71 @@ function entryStatus(e) {
   var r = e.reason || "";
   if (r === "Rewritten") { return ["warn", "改写"]; }
   if (r.indexOf("Filtered") === 0) { return ["bad", "拦截"]; }
-  return ["", "通过"];
+  return ["good", "放行"];
+}
+
+function logRow(e) {
+  var st = entryStatus(e);
+  var row = document.createElement("div");
+  row.className = "logrow";
+
+  var badge = document.createElement("span");
+  badge.className = "pill " + st[0];
+  badge.textContent = st[1];
+  row.appendChild(badge);
+
+  var main = document.createElement("div");
+  main.className = "logmain";
+
+  var host = document.createElement("div");
+  host.className = "host";
+  host.textContent = entryHost(e) || "—";
+  host.title = host.textContent;
+  main.appendChild(host);
+
+  var meta = document.createElement("div");
+  meta.className = "meta metarow";
+  var parts = [];
+  if (e.question && e.question.type) { parts.push(e.question.type); }
+  if (e.time) { parts.push(fmtDate(Date.parse(e.time) / 1000)); }
+  var ans = e.answer || [];
+  if (ans.length) { parts.push(ans.slice(0, 2).join(", ")); }
+  if (e.client) { parts.push(e.client); }
+  parts.forEach(function (t) {
+    var sp = document.createElement("span");
+    sp.textContent = t;
+    meta.appendChild(sp);
+  });
+  main.appendChild(meta);
+
+  row.appendChild(main);
+
+  return row;
+}
+
+function appendRows(entries) {
+  var body = $("log-body");
+  var frag = document.createDocumentFragment();
+  entries.forEach(function (e) { frag.appendChild(logRow(e)); });
+  body.appendChild(frag);
 }
 
 function renderLog() {
   var body = $("log-body");
+  body.textContent = "";
+
   if (log.length === 0) {
-    body.innerHTML = '<p class="small muted">没有记录。</p>';
+    var p = document.createElement("p");
+    p.className = "small muted";
+    p.style.margin = "0";
+    p.textContent = "没有记录。";
+    body.appendChild(p);
     $("log-more").classList.add("hidden");
+
     return;
   }
-  var frag = document.createDocumentFragment();
-  log.forEach(function (e) {
-    var st = entryStatus(e);
-    var row = document.createElement("div");
-    row.className = "logrow";
 
-    var badge = document.createElement("span");
-    badge.className = "badge " + st[0];
-    badge.textContent = st[1];
-
-    var main = document.createElement("div");
-    main.className = "logmain";
-
-    var host = document.createElement("div");
-    host.className = "host";
-    host.textContent = entryHost(e) || "—";
-    host.title = host.textContent;
-
-    var meta = document.createElement("div");
-    meta.className = "meta";
-    var parts = [];
-    if (e.question && e.question.type) { parts.push(e.question.type); }
-    if (e.time) { parts.push(fmtDate(Date.parse(e.time) / 1000)); }
-    if (e.client) { parts.push(e.client); }
-    meta.textContent = parts.join(" · ");
-
-    main.appendChild(host);
-    main.appendChild(meta);
-    row.appendChild(badge);
-    row.appendChild(main);
-    frag.appendChild(row);
-  });
-  body.textContent = "";
-  body.appendChild(frag);
+  appendRows(log);
   $("log-more").classList.toggle("hidden", exhausted || log.length >= MAX_KEPT);
 }
 
@@ -864,9 +1207,7 @@ function loadLog(reset) {
   }
 
   return api(path).then(function (r) {
-    if (r.status === 401) {
-      throw new Error("登录已失效，请重新登录");
-    }
+    if (r.status === 401) { throw new Error("登录已失效，请重新登录"); }
     if (!r.ok) { throw new Error("加载失败（HTTP " + r.status + "）"); }
     return r.json();
   }).then(function (d) {
@@ -895,7 +1236,7 @@ $("log-term").addEventListener("keydown", function (e) {
   if (e.key === "Enter") { exhausted = false; loadLog(true); }
 });
 
-/* ---------- 注册与账号设置 ---------- */
+/* ---------- 配置 ---------- */
 
 // 由 /portal/api/config 填充：注册开关、是否要邮箱验证、公告。
 var PORTAL_CONFIG = {
@@ -926,6 +1267,48 @@ function loadConfig() {
     // 配置拉不到不该挡住登录，按最保守的默认值继续。
   });
 }
+
+/* ---------- 登录 ---------- */
+
+$("login-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var btn = $("login-btn");
+  btn.disabled = true;
+  showAlert($("login-alert"), "");
+
+  api("/portal/api/login", {
+    method: "POST",
+    body: { login: $("login-name").value, password: $("login-pass").value },
+  }).then(function (r) {
+    if (r.ok) { return r.json(); }
+    if (r.status === 401) { throw new Error("标识或密码不对"); }
+    if (r.status === 429) { throw new Error("尝试太频繁，请过一会儿再试"); }
+    throw new Error("登录失败（HTTP " + r.status + "）");
+  }).then(function (d) {
+    $("login-pass").value = "";
+    showPanel();
+    showTab("report");
+    renderUser(d.user);
+    return loadLog(true);
+  }).catch(function (err) {
+    showAlert($("login-alert"), err.message);
+  }).finally(function () {
+    btn.disabled = false;
+  });
+});
+
+$("logout-btn").addEventListener("click", function () {
+  api("/portal/api/logout", { method: "POST" }).finally(function () {
+    log = [];
+    showLogin("已退出");
+  });
+});
+
+Array.prototype.forEach.call($("tabs").children, function (b) {
+  b.addEventListener("click", function () {
+    showTab(b.getAttribute("data-tab"));
+  });
+});
 
 /* ---------- 注册 ---------- */
 
@@ -1018,8 +1401,8 @@ $("register-form").addEventListener("submit", function (e) {
     $("register-pass").value = "";
     $("register-code").value = "";
     showPanel();
+    showTab("report");
     renderUser(d.user);
-    renderAccount(d.user);
     return loadLog(true);
   }).catch(function (err) {
     showAlert($("register-alert"), err.message);
@@ -1034,7 +1417,7 @@ function renderAccount(u) {
   if (!u) { return; }
 
   var email = u.email || "";
-  $("email-state").textContent = email
+  $("email-shown").textContent = email
     ? (email + (u.email_verified ? "（已验证）" : "（未验证）"))
     : "未绑定";
 
@@ -1069,7 +1452,7 @@ $("email-bind-btn").addEventListener("click", function () {
     });
   }).then(function (d) {
     $("email-code").value = "";
-    showAlert($("email-hint"), "已绑定");
+    showAlert($("email-hint"), "已绑定", "ok");
     renderAccount(d.user);
   }).catch(function (err) {
     showAlert($("email-hint"), err.message);
@@ -1088,7 +1471,7 @@ $("email-clear-btn").addEventListener("click", function () {
     }).then(function (d) {
       $("email-input").value = "";
       $("email-code").value = "";
-      showAlert($("email-hint"), "已解绑");
+      showAlert($("email-hint"), "已解绑", "ok");
       renderAccount(d.user);
     }).catch(function (err) {
       showAlert($("email-hint"), err.message);
@@ -1112,7 +1495,7 @@ $("pass-btn").addEventListener("click", function () {
   }).then(function () {
     $("pass-old").value = "";
     $("pass-new").value = "";
-    showAlert($("pass-hint"), "密码已修改");
+    showAlert($("pass-hint"), "密码已修改", "ok");
   }).catch(function (err) {
     showAlert($("pass-hint"), err.message);
   }).finally(function () {
@@ -1131,7 +1514,6 @@ loadConfig().then(function () {
     if (d && d.user) {
       showPanel();
       renderUser(d.user);
-      renderAccount(d.user);
       loadLog(true);
     } else {
       showLogin("");
