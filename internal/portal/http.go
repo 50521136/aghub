@@ -31,6 +31,7 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	// Sign-up and the account pages.  These are public because a user who
 	// cannot sign in yet still has to be able to reach them.
 	reg.Register(http.MethodGet, "/portal/api/config", m.handleConfig)
+	reg.Register(http.MethodGet, "/portal/api/public", m.handlePublic)
 	reg.Register(http.MethodPost, "/portal/api/email/code", m.handleEmailCode)
 	reg.Register(http.MethodPost, "/portal/api/register", m.handleRegister)
 
@@ -377,6 +378,20 @@ func (m *Manager) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &meResponse{User: info})
+}
+
+// handlePublic implements GET /portal/api/public.
+//
+// It answers without a session: this is what the page shows before anybody
+// signs in, and it is the only portal handler that does so on purpose.
+func (m *Manager) handlePublic(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, m.PublicStats())
 }
 
 // handleLog implements GET /portal/api/log.

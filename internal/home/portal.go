@@ -52,10 +52,11 @@ func initPortal(
 	}
 
 	mgr, err := portal.New(&portal.Config{
-		Logger:   baseLogger,
-		Users:    usersMgr,
-		Sessions: sessions,
-		Log:      &portalLogSource{log: log},
+		Logger:    baseLogger,
+		Users:     usersMgr,
+		Sessions:  sessions,
+		Log:       &portalLogSource{log: log},
+		Filtering: portalFilteringSource{},
 	})
 	if err != nil {
 		return fmt.Errorf("portal: creating the manager: %w", err)
@@ -135,4 +136,25 @@ func (s *portalLogSource) Search(
 	}
 
 	return &portal.LogResponse{Entries: res.Entries}, nil
+}
+
+// portalFilteringSource reports the rule counts of the filter engine to the
+// portal.
+//
+// It looks the engine up on every call instead of holding a pointer to it,
+// because the portal is created while the filter module may still be nil.
+// Holding the pointer would leave the public page reporting no rules forever.
+type portalFilteringSource struct{}
+
+// FilteringStatus implements the [portal.FilteringSource] interface.
+func (portalFilteringSource) FilteringStatus() (s portal.FilteringStatus) {
+	f := globalContext.filters
+	if f == nil {
+		return portal.FilteringStatus{}
+	}
+
+	s.Rules, s.Lists, s.CustomRules = f.RulesCount()
+	s.Enabled = f.Settings().FilteringEnabled
+
+	return s
 }

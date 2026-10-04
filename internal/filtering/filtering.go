@@ -322,6 +322,30 @@ func (d *DNSFilter) SetEnabled(enabled bool) {
 	atomic.StoreUint32(&d.conf.enabled, mathutil.BoolToNumber[uint32](enabled))
 }
 
+// RulesCount returns the number of rules the engine is holding, the number of
+// enabled blocking lists, and the number of custom rules.
+//
+// Only enabled lists are counted.  The portal shows this number to visitors as
+// the size of the blocklist, so counting a list that is switched off would
+// promise protection that is not there.
+func (d *DNSFilter) RulesCount() (rules uint64, lists, custom int) {
+	d.conf.filtersMu.RLock()
+	defer d.conf.filtersMu.RUnlock()
+
+	for _, f := range d.conf.Filters {
+		if f.Enabled {
+			lists++
+
+			// #nosec G115 -- The number of rules cannot be negative.
+			rules += uint64(f.RulesCount)
+		}
+	}
+
+	custom = len(d.conf.UserRules)
+
+	return rules + uint64(custom), lists, custom
+}
+
 // Settings returns filtering settings.
 func (d *DNSFilter) Settings() (s *Settings) {
 	d.confMu.RLock()

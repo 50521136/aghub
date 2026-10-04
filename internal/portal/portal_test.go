@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -48,10 +49,44 @@ type testUserStore struct {
 
 	// domain is the domain of the DoT and DoH endpoints.
 	domain string
+
+	// summary is what the store reports as the aggregate state of all
+	// accounts.  A nil value stands for an empty one.
+	summary *users.Summary
+}
+
+// Summary implements the [UserStore] interface.
+func (s *testUserStore) Summary() (sum *users.Summary) {
+	if s.summary == nil {
+		return &users.Summary{}
+	}
+
+	return s.summary
 }
 
 // type check
 var _ UserStore = (*testUserStore)(nil)
+
+// testFiltering is a filter engine that reports a fixed status.
+type testFiltering struct {
+	rules   uint64
+	lists   int
+	custom  int
+	enabled bool
+}
+
+// FilteringStatus implements the [FilteringSource] interface.
+func (f testFiltering) FilteringStatus() (s FilteringStatus) {
+	return FilteringStatus{
+		Rules:       f.rules,
+		Lists:       f.lists,
+		CustomRules: f.custom,
+		Enabled:     f.enabled,
+	}
+}
+
+// type check
+var _ FilteringSource = testFiltering{}
 
 // FindByLogin implements the [UserStore] interface.  It mirrors the real
 // lookup: identifiers first, then the e-mail address, then the name.
@@ -809,4 +844,77 @@ func TestEveryResponseCarriesTheClientPart(t *testing.T) {
 
 		check(t, get(t, m.handleMe, "/portal/api/me", c))
 	})
+}
+
+// TestPublicStats checks the anonymous summary of the service.
+func TestPublicStats(t *testing.T) {
+	store := newTestStore()
+	store.domain = testDomain
+	store.summary = &users.Summary{
+		Total:         10,
+		Disabled:      2,
+		Expired:       1,
+		OverQuota:     1,
+		ExpiringSoon:  1,
+		TotalRequests: 12345,
+	}
+
+	m, _ := newTestPortal(t, store)
+	m.filtering = testFiltering{rules: 1000, lists: 3, custom: 7, enabled: true}
+
+	s := m.PublicStats()
+
+	assert.Equal(t, int64(12345), s.Queries)
+	assert.Equal(t, 10, s.Accounts)
+	assert.Equal(t, 6, s.Active, "disabled, expired and over-quota accounts are not active")
+	assert.Equal(t, uint64(1000), s.Rules)
+	assert.Equal(t, 3, s.Lists)
+	assert.Equal(t, 7, s.CustomRules)
+	assert.True(t, s.Protected)
+	assert.Equal(t, testDomain, s.Domain)
+}
+
+// TestPublicStatsWithoutFiltering checks that a service without a filter engine
+// reports no rules rather than a made-up zero that would read as "nothing is
+// blocked".
+func TestPublicStatsWithoutFiltering(t *testing.T) {
+	store := newTestStore()
+	store.summary = &users.Summary{Total: 1, TotalRequests: 5}
+
+	m, _ := newTestPortal(t, store)
+	require.Nil(t, m.filtering)
+
+	s := m.PublicStats()
+
+	assert.Zero(t, s.Rules)
+	assert.Zero(t, s.Lists)
+	assert.Zero(t, s.CustomRules)
+	assert.Equal(t, int64(5), s.Queries)
+}
+
+// TestPublicStatsHasNoAccountFields is the leak guard for the one portal
+// response that anybody can read: its shape must stay the anonymous summary.
+func TestPublicStatsHasNoAccountFields(t *testing.T) {
+	store := newTestStore()
+	store.summary = &users.Summary{Total: 1, TotalRequests: 5}
+
+	m, _ := newTestPortal(t, store)
+
+	rec := get(t, m.handlePublic, "/portal/api/public")
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	got := map[string]any{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	want := []string{
+		"accounts", "active", "custom_rules", "domain", "lists", "protected",
+		"queries", "rules",
+	}
+	keys := make([]string, 0, len(got))
+	for k := range got {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	assert.Equal(t, want, keys)
 }

@@ -236,3 +236,56 @@ func hostsOf(ids []string, domain string) (hosts []string) {
 
 	return hosts
 }
+
+// PublicStats is the anonymous summary of the service that the portal shows to
+// visitors who have not signed in.
+//
+// This is the only portal response anybody on the internet can read, so it must
+// never carry anything that belongs to an individual account: the totals are
+// sums over all of them.
+type PublicStats struct {
+	// Queries is the number of queries the service has answered for all
+	// accounts, counted since each account was created.
+	Queries int64 `json:"queries"`
+
+	// Rules is the number of filtering rules in force.  Lists and
+	// CustomRules say where they come from.
+	Rules       uint64 `json:"rules"`
+	Lists       int    `json:"lists"`
+	CustomRules int    `json:"custom_rules"`
+
+	// Accounts is the number of accounts, and Active how many of them can be
+	// used right now.
+	Accounts int `json:"accounts"`
+	Active   int `json:"active"`
+
+	// Protected is whether the service is filtering anything at all.
+	Protected bool `json:"protected"`
+
+	// Domain is the domain of the DoT and DoH endpoints, if one is set.
+	Domain string `json:"domain"`
+}
+
+// PublicStats returns the anonymous summary of the service.
+func (m *Manager) PublicStats() (s *PublicStats) {
+	s = &PublicStats{Domain: m.users.Domain()}
+
+	if sum := m.users.Summary(); sum != nil {
+		s.Queries = sum.TotalRequests
+		s.Accounts = sum.Total
+
+		// A disabled, expired or over-quota account cannot be used, so it is
+		// not active.  One that is merely about to expire still works.
+		s.Active = sum.Total - sum.Disabled - sum.Expired - sum.OverQuota
+	}
+
+	// Filtering is optional, and a page that claims zero rules would read as
+	// "nothing is blocked" rather than "not known here".
+	if m.filtering != nil {
+		fs := m.filtering.FilteringStatus()
+		s.Rules, s.Lists, s.CustomRules = fs.Rules, fs.Lists, fs.CustomRules
+		s.Protected = fs.Enabled
+	}
+
+	return s
+}

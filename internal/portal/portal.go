@@ -86,6 +86,11 @@ type UserStore interface {
 	// does not have to restart AGHub after changing them.
 	GetSettings() (s *users.Settings)
 
+	// Summary returns the aggregate state of all accounts.  The public page
+	// shows it to visitors who have not signed in, so it must not carry
+	// anything about an individual account.
+	Summary() (s *users.Summary)
+
 	// Register creates an account for a portal user, generating the identifier
 	// that the account and the DNS identity share.
 	Register(p *users.RegisterParams) (u *users.User, err error)
@@ -95,6 +100,31 @@ type UserStore interface {
 
 	// SetPortalPassword sets the portal password of the user.
 	SetPortalPassword(uid, password string) (err error)
+}
+
+// FilteringStatus is the state of the filter engine.
+type FilteringStatus struct {
+	// Rules is the number of rules in force.
+	Rules uint64
+
+	// Lists is the number of enabled blocking lists.
+	Lists int
+
+	// CustomRules is the number of custom rules.
+	CustomRules int
+
+	// Enabled is whether filtering is applied at all.
+	Enabled bool
+}
+
+// FilteringSource reports the state of the filter engine.
+//
+// It is a separate interface because filtering is optional: without it the
+// public page says nothing about rules rather than reporting zero, which would
+// read as "nothing is blocked here".
+type FilteringSource interface {
+	// FilteringStatus returns the state of the filter engine.
+	FilteringStatus() (s FilteringStatus)
 }
 
 // LogSource provides the query log entries of a single user.
@@ -145,6 +175,10 @@ type Config struct {
 	// Log is the query log.  It must not be nil.
 	Log LogSource
 
+	// Filtering reports the state of the filter engine.  It may be nil, and
+	// then the public page does not mention the rules at all.
+	Filtering FilteringSource
+
 	// SessionTTL is how long a session lasts.  Zero means
 	// [DefaultSessionTTL].
 	SessionTTL time.Duration
@@ -171,13 +205,14 @@ type Config struct {
 
 // Manager is the user portal.
 type Manager struct {
-	logger   *slog.Logger
-	users    UserStore
-	sessions aghuser.SessionStorage
-	log      LogSource
-	limiter  *loginLimiter
-	now      func() time.Time
-	ttl      time.Duration
+	logger    *slog.Logger
+	users     UserStore
+	sessions  aghuser.SessionStorage
+	log       LogSource
+	filtering FilteringSource
+	limiter   *loginLimiter
+	now       func() time.Time
+	ttl       time.Duration
 
 	// codes holds the pending e-mail verifications.  They are deliberately in
 	// memory: a code that does not survive a restart is safer, and losing one
@@ -239,6 +274,7 @@ func New(conf *Config) (m *Manager, err error) {
 		users:       conf.Users,
 		sessions:    conf.Sessions,
 		log:         conf.Log,
+		filtering:   conf.Filtering,
 		limiter:     newLoginLimiter(attempts, window, now),
 		now:         now,
 		ttl:         ttl,

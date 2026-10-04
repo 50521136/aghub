@@ -140,7 +140,7 @@ body {
 .statgrid { display: flex; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .statgrid > div { flex: 1 1 0; text-align: center; border-left: 1px solid var(--line); }
 .statgrid > div:first-child { border-left: 0; }
-.statgrid .gv { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
+.statgrid .gv { font-size: 25px; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
 .statgrid .gk { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .statgrid #stat-rate { color: var(--accent); }
 .stat-line b { color: var(--fg); font-weight: 600; }
@@ -187,6 +187,13 @@ button.primary {
   font-weight: 600; box-shadow: 0 4px 14px rgba(29, 78, 216, .22);
 }
 button.primary:hover { filter: brightness(1.06); }
+/* 白底 + 浅描边放在白卡片上几乎看不见，会被当成"不可点的占位框"，
+   所以次级操作给一层淡蓝底。 */
+button.secondary {
+  background: var(--accent-soft); border-color: transparent;
+  color: var(--accent); font-weight: 600;
+}
+button.secondary:hover { background: rgba(29, 78, 216, .14); }
 button.quiet { border-color: transparent; background: transparent; color: var(--muted); }
 button.quiet:hover { color: var(--accent); background: var(--accent-softer); }
 button:disabled { opacity: .5; cursor: default; }
@@ -320,6 +327,38 @@ a:hover { text-decoration: underline; }
 .tabs > button.on { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .tabs > button:hover { color: var(--accent); }
 
+/* ---------- 公共战报 ---------- */
+/* 未登录时看到的就是这一页，所以它得自己站得住：一个大数字 + 三宫格，
+   不依赖任何账号数据。 */
+.public-hero h2 { font-size: 27px; }
+.public-num { font-size: 46px; }
+.cta { display: flex; gap: 10px; margin-bottom: 14px; }
+.cta > button { flex: 1 1 0; min-height: 46px; font-size: 15px; }
+.faq p { margin: 0; }
+.faq p + p { margin-top: 8px; }
+/* 页脚：页面直接收在最后一张卡上会显得没写完。 */
+.foot {
+  text-align: center; font-size: 11.5px; color: var(--dim);
+  margin: 12px 0 4px; line-height: 1.8;
+}
+.foot span + span::before { content: " · "; }
+/* 两个数字用两列；三列里塞一个"1"会独占一格，中间空一大片。 */
+.statgrid.two { grid-template-columns: repeat(2, 1fr); }
+.perks { list-style: none; margin: 0 0 16px; padding: 0; }
+.perks li {
+  position: relative; padding-left: 18px;
+  font-size: 13px; line-height: 1.9; color: var(--muted);
+}
+.perks li::before {
+  content: ""; position: absolute; left: 4px; top: 8px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+/* 卡片内的小节标题左对齐，和它下面左对齐的正文同一个轴；居中标题配左对齐
+   正文会让一张卡里出现两个对齐轴。 */
+.sechead { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+/* 域名和长句在窄屏要能断开，否则会顶出卡片。 */
+.breakable { overflow-wrap: anywhere; }
+
 /* ---------- 加载态 ---------- */
 .spinner {
   display: inline-block; width: 13px; height: 13px; margin-right: 8px;
@@ -347,6 +386,88 @@ a:hover { text-decoration: underline; }
 </head>
 <body>
 <div class="wrap">
+
+  <!-- 公共战报（未登录） -->
+  <section id="public-view">
+    <div class="topbar">
+      <div class="brand">
+        <div class="mark">A</div>
+        <h1>加密 DNS</h1>
+      </div>
+      <span class="pill grey"><span class="dot"></span>TLS 加密传输</span>
+    </div>
+
+    <div class="card grad">
+      <div class="center" style="margin-bottom:14px">
+        <span class="pill" id="public-state">
+          <span class="dot off"></span>正在读取服务状态
+        </span>
+      </div>
+      <div class="hero public-hero">
+        <h2>加密 DNS 公共战报</h2>
+        <p id="public-sub">正在统计全站解析情况…</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="stat-label">全站累计解析</div>
+      <div class="stat-num num public-num" id="public-queries">—</div>
+      <div class="stat-line">所有账号自开通以来的查询总数</div>
+
+      <div class="statgrid two">
+        <div>
+          <div class="gv num" id="public-rules">—</div>
+          <div class="gk">过滤规则</div>
+        </div>
+        <div>
+          <div class="gv num" id="public-active">—</div>
+          <div class="gk">在用账号</div>
+        </div>
+      </div>
+
+      <p class="stat-line" id="public-sources">—</p>
+    </div>
+
+    <div class="card" id="public-access">
+      <div class="sechead">如何接入</div>
+      <p class="tiny muted" style="margin:0 0 12px">
+        把下面的地址填进设备或路由器就能开始使用，接入本身不需要账号。
+      </p>
+      <div id="public-endpoints"></div>
+    </div>
+
+    <div class="card">
+      <div class="sechead">登录后可以</div>
+      <ul class="perks">
+        <li>看到自己的专属标识和 DoT / DoH 地址</li>
+        <li>查看最近的查询日志和拦截情况</li>
+        <li>跟踪用量配额和 30 天趋势</li>
+      </ul>
+      <div class="cta">
+        <button id="public-login-btn" class="primary" type="button">登录</button>
+        <button id="public-register-btn" class="secondary hidden" type="button">注册</button>
+      </div>
+      <p class="tiny muted center" id="public-hint" style="margin:12px 0 0">
+        用标识、邮箱或用户名登录。
+      </p>
+    </div>
+
+    <div class="card faq">
+      <div class="sechead">这是什么</div>
+      <p class="small muted">
+        一个加密 DNS 解析服务。设备把域名查询加密后发到这里，它负责解析，
+        并按过滤规则挡下广告和追踪域名。
+      </p>
+      <p class="small muted">
+        未登录时这里只显示全站汇总，不涉及任何个人数据。
+      </p>
+    </div>
+
+    <p class="foot breakable">
+      <span id="public-foot-name">加密 DNS</span>
+      <span id="public-foot-domain"></span>
+    </p>
+  </section>
 
   <!-- 登录 -->
   <section id="login-view">
@@ -378,6 +499,9 @@ a:hover { text-decoration: underline; }
         还没有账号？<a href="#" id="login-register-link">立即注册</a>
       </p>
       <p class="tiny muted" id="login-hint" style="margin:14px 0 0"></p>
+      <p class="tiny muted" style="margin:10px 0 0">
+        <a href="#" id="login-back">返回服务战报</a>
+      </p>
     </div>
   </section>
 
@@ -756,28 +880,111 @@ var STATUS = {
 
 /* ---------- 视图切换 ---------- */
 
-function showLogin(msg) {
-  $("panel-view").classList.add("hidden");
-  $("register-view").classList.add("hidden");
+// hideAll 把三个未登录视图和面板一起收起来，各个入口再打开自己要的那个。
+// 少收一个就会两层叠在一起。
+function hideAll() {
+  ["public-view", "login-view", "register-view", "panel-view"].forEach(function (v) {
+    $(v).classList.add("hidden");
+  });
   $("tabs").classList.add("hidden");
+}
+
+function showPublic() {
+  hideAll();
+  $("public-view").classList.remove("hidden");
+  window.scrollTo(0, 0);
+}
+
+function showLogin(msg) {
+  hideAll();
   $("login-view").classList.remove("hidden");
   showAlert($("login-alert"), msg);
 }
 
 function showPanel() {
-  $("login-view").classList.add("hidden");
-  $("register-view").classList.add("hidden");
+  hideAll();
   $("panel-view").classList.remove("hidden");
   $("tabs").classList.remove("hidden");
 }
 
 function showRegister() {
-  $("login-view").classList.add("hidden");
-  $("panel-view").classList.add("hidden");
-  $("tabs").classList.add("hidden");
+  hideAll();
   $("register-view").classList.remove("hidden");
   showAlert($("register-alert"), "");
 }
+
+/* ---------- 公共战报 ---------- */
+
+function renderPublic(p) {
+  if (!p) { return; }
+
+  $("public-queries").textContent = fmtNum(p.queries);
+  $("public-rules").textContent = fmtNum(p.rules);
+  $("public-active").textContent = fmtNum(p.active) + " / " + fmtNum(p.accounts);
+
+  // 规则数为 0 时说明引擎没加载列表，直接写 0 条会被读成"什么都没拦"。
+  $("public-sources").textContent = p.rules > 0
+    ? "规则来自 " + fmtNum(p.lists) + " 个过滤列表和 "
+      + fmtNum(p.custom_rules) + " 条自定义规则"
+    : "过滤引擎尚未加载规则";
+
+  var st = $("public-state");
+  if (p.protected) {
+    st.className = "pill good";
+    st.innerHTML = '<span class="dot on"></span>过滤保护已开启';
+  } else {
+    st.className = "pill warn";
+    st.innerHTML = '<span class="dot off"></span>过滤保护未开启';
+  }
+
+  $("public-sub").textContent = "下面这些数字来自正在运行的服务，"
+    + "实时汇总，未登录也能看。";
+
+  $("public-foot-domain").textContent = p.domain || "尚未配置接入域名";
+
+  // 接入地址是未登录访客唯一能直接用的东西，所以给它等宽字体和复制按钮，
+  // 而不是一行普通文本。
+  var box = $("public-endpoints");
+  box.textContent = "";
+
+  if (p.domain) {
+    $("public-access").classList.remove("hidden");
+    box.appendChild(endpointRow("DoT", p.domain,
+      "安卓「私人 DNS」填入这个主机名，端口 853。"));
+    box.appendChild(endpointRow("DoH", "https://" + p.domain + "/dns-query",
+      "iPhone、Windows、浏览器里直接填入这个地址。"));
+  } else {
+    // 没有域名就没有可复制的接入地址，整张卡藏掉比留一张空卡好。
+    $("public-access").classList.add("hidden");
+  }
+}
+
+function loadPublic() {
+  return api("/portal/api/public").then(function (r) {
+    if (!r.ok) { throw new Error("HTTP " + r.status); }
+    return r.json();
+  }).then(function (d) {
+    // 渲染异常和网络异常必须分开报：以前两者都落到下面那句"读不到统计"，
+    // 一个前端 bug 会伪装成后端不可用，排查时完全看不出线索。
+    try {
+      renderPublic(d);
+    } catch (e) {
+      console.error("公共战报渲染失败", e);
+      throw e;
+    }
+  }).catch(function (e) {
+    console.error("公共战报加载失败", e);
+    // 统计拉不到不该挡住登录入口。
+    $("public-sub").textContent = "暂时读不到服务统计，你仍然可以登录。";
+  });
+}
+
+$("public-login-btn").addEventListener("click", function () { showLogin(""); });
+$("public-register-btn").addEventListener("click", showRegister);
+$("login-back").addEventListener("click", function (e) {
+  e.preventDefault();
+  showPublic();
+});
 
 // showTab 切换面板内的分页。四个视图都在 DOM 里，只是隐藏，所以切回来时
 // 不需要重新请求。
@@ -1253,6 +1460,8 @@ function loadConfig() {
     if (d) { PORTAL_CONFIG = d; }
 
     $("login-register").classList.toggle("hidden", !PORTAL_CONFIG.registration_open);
+    $("public-register-btn").classList.toggle(
+      "hidden", !PORTAL_CONFIG.registration_open);
 
     // 用户名和邮箱永远要填；只有开启邮箱验证时才多一个验证码。
     var needsCode = !!PORTAL_CONFIG.email_required;
@@ -1300,7 +1509,8 @@ $("login-form").addEventListener("submit", function (e) {
 $("logout-btn").addEventListener("click", function () {
   api("/portal/api/logout", { method: "POST" }).finally(function () {
     log = [];
-    showLogin("已退出");
+    showPublic();
+    loadPublic();
   });
 });
 
@@ -1505,22 +1715,28 @@ $("pass-btn").addEventListener("click", function () {
 
 /* ---------- 启动 ---------- */
 
-// 先拉配置再拉会话：注册入口和公告跟着配置走，但配置失败也不能挡住登录。
+// 先拉配置，再同时拉公共统计和会话。注册入口和公告跟着配置走，但配置失败
+// 也不能挡住登录。未登录时看到的是公共战报，不是登录表单 —— 服务有什么可看的
+// 先摆出来，要登录再点。
 loadConfig().then(function () {
-  return api("/portal/api/me").then(function (r) {
-    if (!r.ok) { return null; }
-    return r.json();
-  }).then(function (d) {
+  return Promise.all([
+    loadPublic(),
+    api("/portal/api/me").then(function (r) {
+      if (!r.ok) { return null; }
+      return r.json();
+    }).catch(function () { return null; }),
+  ]).then(function (res) {
+    var d = res[1];
     if (d && d.user) {
       showPanel();
       renderUser(d.user);
       loadLog(true);
     } else {
-      showLogin("");
+      showPublic();
     }
   });
 }).catch(function () {
-  showLogin("");
+  showPublic();
 });
 </script>
 </body>
