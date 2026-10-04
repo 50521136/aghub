@@ -360,14 +360,14 @@ func (m *Manager) handleRegister(w http.ResponseWriter, r *http.Request) {
 		// The account exists and works; only the automatic sign-in failed.
 		l.ErrorContext(ctx, "signing in after registration", "err", err)
 
-		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.Info(u)})
+		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.InfoForRequest(ctx, r, u)})
 
 		return
 	}
 
 	m.setSessionCookie(w, r, sess)
 
-	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.Info(u)})
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.InfoForRequest(ctx, r, u)})
 }
 
 // checkEmailCode reports whether the code matches the address.
@@ -475,7 +475,7 @@ func (m *Manager) handleEmail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &meResponse{User: m.Info(u)})
+		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &meResponse{User: m.InfoForRequest(ctx, r, u)})
 
 		return
 	}
@@ -504,7 +504,7 @@ func (m *Manager) handleEmail(w http.ResponseWriter, r *http.Request) {
 
 	l.InfoContext(ctx, "portal e-mail bound", "uid", u.UID)
 
-	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &meResponse{User: m.Info(u)})
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &meResponse{User: m.InfoForRequest(ctx, r, u)})
 }
 
 // mailTestRequest is the request of the POST /control/portal/mail/test HTTP API.

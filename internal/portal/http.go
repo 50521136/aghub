@@ -304,7 +304,7 @@ func (m *Manager) handleLogin(w http.ResponseWriter, r *http.Request) {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
 	default:
 		m.setSessionCookie(w, r, s)
-		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.Info(s.User)})
+		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.InfoForRequest(ctx, r, s.User)})
 	}
 }
 
@@ -369,7 +369,7 @@ func (m *Manager) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := m.Info(u)
+	info := m.InfoForRequest(ctx, r, u)
 	if info == nil {
 		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusNotFound, "no such user")
 

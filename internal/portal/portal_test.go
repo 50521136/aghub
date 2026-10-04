@@ -2,6 +2,11 @@ package portal
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"path/filepath"
 	"strings"
@@ -132,6 +137,11 @@ type testLogSource struct {
 
 	// err is returned by the search.
 	err error
+
+	// entries are returned as the "data" array of the response.  The type is
+	// deliberately loose: the real source hands back a slice of maps, and a
+	// fake that only ever produces []any hid exactly that difference.
+	entries any
 }
 
 // type check
@@ -144,7 +154,12 @@ func (s *testLogSource) Search(_ context.Context, req *LogRequest) (resp *LogRes
 		return nil, s.err
 	}
 
-	return &LogResponse{Entries: map[string]any{"data": []any{}, "oldest": ""}}, nil
+	data := s.entries
+	if data == nil {
+		data = []any{}
+	}
+
+	return &LogResponse{Entries: map[string]any{"data": data, "oldest": ""}}, nil
 }
 
 // newTestPortal creates a portal with a real session storage on a temporary
@@ -588,4 +603,210 @@ func (nopSessions) DeleteByToken(context.Context, aghuser.SessionToken) (err err
 // Close implements the [aghuser.SessionStorage] interface.
 func (nopSessions) Close() (err error) {
 	panic("not implemented")
+}
+
+// TestDeviceFromUserAgent checks that the panel names the device when the user
+// agent says something useful, and says nothing rather than guessing otherwise.
+func TestDeviceFromUserAgent(t *testing.T) {
+	testCases := []struct {
+		name string
+		ua   string
+		want string
+	}{{
+		name: "iphone",
+		ua:   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+		want: "iPhone",
+	}, {
+		name: "ipad",
+		ua:   "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+		want: "iPad",
+	}, {
+		name: "android",
+		ua:   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0",
+		want: "Android 设备",
+	}, {
+		name: "windows",
+		ua:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0",
+		want: "Windows 设备",
+	}, {
+		name: "mac",
+		ua:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+		want: "Mac",
+	}, {
+		name: "empty",
+		ua:   "",
+		want: "",
+	}, {
+		name: "unknown",
+		ua:   "curl/8.5.0",
+		want: "",
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, DeviceFromUserAgent(tc.ua))
+		})
+	}
+}
+
+// TestIsBlockedReason checks that only the filter rejections count as blocked,
+// so that a rewrite is not reported as an advert that was stopped.
+func TestIsBlockedReason(t *testing.T) {
+	testCases := []struct {
+		reason string
+		want   bool
+	}{
+		{reason: "FilteredBlockList", want: true},
+		{reason: "FilteredSafeBrowsing", want: true},
+		{reason: "FilteredParental", want: true},
+		{reason: "Rewritten", want: false},
+		{reason: "NotFilteredNotFound", want: false},
+		{reason: "", want: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.reason, func(t *testing.T) {
+			assert.Equal(t, tc.want, isBlockedReason(tc.reason))
+		})
+	}
+}
+
+// TestClientInfoCountsTheLog checks that the panel counts the blocked and the
+// allowed entries of the account, and that it survives a broken log instead of
+// failing to render.
+func TestClientInfoCountsTheLog(t *testing.T) {
+	entry := func(reason string) any {
+		return map[string]any{"reason": reason}
+	}
+
+	// The two shapes a log source really produces: a typed slice of maps, which
+	// is what the bundled one returns, and a loose slice of any.  Counting only
+	// worked for the second one at first, and the panel reported zero for every
+	// real account.
+	shapes := []struct {
+		name string
+		data any
+	}{
+		{
+			name: "slice of maps",
+			data: []map[string]any{
+				{"reason": "FilteredBlockList"},
+				{"reason": "NotFilteredNotFound"},
+				{"reason": "FilteredSafeBrowsing"},
+				{"reason": "Rewritten"},
+			},
+		},
+		{
+			name: "slice of any with a malformed entry",
+			data: []any{
+				entry("FilteredBlockList"),
+				entry("NotFilteredNotFound"),
+				entry("FilteredSafeBrowsing"),
+				entry("Rewritten"),
+				"not an object",
+			},
+		},
+	}
+
+	for _, shape := range shapes {
+		t.Run(shape.name, func(t *testing.T) {
+			store := newTestStore()
+			u := store.defs[testUID]
+
+			m, logSrc := newTestPortal(t, store)
+			logSrc.entries = shape.data
+
+			info := &users.Info{LastSeen: time.Now().Unix()}
+
+			c := m.clientInfoOf(t.Context(), u, info, testIP,
+				"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")
+
+			assert.Equal(t, "192.0.2.1", c.IP)
+			assert.Equal(t, "iPhone", c.Device)
+			assert.True(t, c.Connected)
+			assert.Equal(t, int64(2), c.Blocked)
+			assert.Equal(t, int64(2), c.Allowed)
+			assert.Equal(t, int64(4), c.Scanned,
+				"the malformed entry must not be counted")
+
+			// A log that cannot be read must not take the whole panel down
+			// with it.
+			logSrc.err = errors.New("log is gone")
+
+			c = m.clientInfoOf(t.Context(), u, info, testIP, "")
+			assert.Zero(t, c.Scanned)
+			assert.Equal(t, "192.0.2.1", c.IP)
+		})
+	}
+}
+
+// TestClientInfoNotConnected checks that an account that has not been used for
+// a long time is reported as not connected.
+func TestClientInfoNotConnected(t *testing.T) {
+	store := newTestStore()
+	u := store.defs[testUID]
+
+	m, _ := newTestPortal(t, store)
+
+	c := m.clientInfoOf(t.Context(), u, &users.Info{
+		LastSeen: time.Now().Add(-24 * time.Hour).Unix(),
+	}, testIP, "")
+
+	assert.False(t, c.Connected)
+
+	// A user that has never queried is not connected either.
+	c = m.clientInfoOf(t.Context(), u, &users.Info{}, testIP, "")
+	assert.False(t, c.Connected)
+}
+
+// TestEveryResponseCarriesTheClientPart checks that the responses which hand a
+// user back to the panel all carry the connection part, and not only the one
+// from GET /portal/api/me.
+//
+// The panel draws the signed-in user from the sign-in response, so building
+// that one from [Manager.Info] alone left the address and the counters blank
+// until the visitor happened to reload the whole page.  This is the guard for
+// that: any new response that carries a user belongs here.
+func TestEveryResponseCarriesTheClientPart(t *testing.T) {
+	type response struct {
+		User struct {
+			Client *ClientInfo `json:"client"`
+		} `json:"user"`
+	}
+
+	check := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		r := &response{}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), r))
+
+		require.NotNil(t, r.User.Client, "the response must carry the client part")
+		assert.Equal(t, testIP.String(), r.User.Client.IP)
+		assert.Equal(t, int64(1), r.User.Client.Blocked)
+		assert.Equal(t, int64(1), r.User.Client.Allowed)
+		assert.Equal(t, int64(2), r.User.Client.Scanned)
+	}
+
+	store := newTestStore()
+	u := store.defs[testUID]
+
+	m, logSrc := newTestPortal(t, store)
+	logSrc.entries = []map[string]any{
+		{"reason": "FilteredBlackList"},
+		{"reason": "NotFilteredNotFound"},
+	}
+
+	t.Run("sign in", func(t *testing.T) {
+		body := fmt.Sprintf(`{"login":%q,"password":%q}`, u.UID, testPassword)
+
+		check(t, post(t, m.handleLogin, "/portal/api/login", body))
+	})
+
+	t.Run("session probe", func(t *testing.T) {
+		c := sessionCookie(t, m, store, u.UID)
+
+		check(t, get(t, m.handleMe, "/portal/api/me", c))
+	})
 }
