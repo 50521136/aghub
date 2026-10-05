@@ -72,7 +72,7 @@ func (m *Manager) handlePackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b, err := Package(s.PortalAPIBase, tok, s.PortalOrigins)
+	b, err := Package(s.PortalAPIBase, tok)
 	if err != nil {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
 

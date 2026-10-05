@@ -1,275 +1,216 @@
 <?php
 /**
- * AGHub 门户 —— 前端页面 + API 反向代理（PHP 版）
+ * AGHub 门户 —— 入口。
  *
- * 浏览器只跟这个 PHP 说话（同源），PHP 再去调 AGHub。服务端到服务端那一跳
- * 没有浏览器参与，所以：
- *
- *   - AGHub 那边用 http 还是 https 都行，不需要证书
- *   - 不需要 CORS，不需要在管理端配「门户来源」
- *   - 前端页面本身用 http 还是 https 都行
- *   - 会话 cookie 由 PHP 按浏览器实际协议兜底改写，不会出现"登录成功、刷新掉线"
- *
- * 目录结构（把 AGHub 门户部署包里的 index.html、config.js 一起放进来）：
- *
- *   <站点目录>/portal/index.php     ← 本文件
- *   <站点目录>/portal/index.html    ← 从 AGHub 门户部署包拿
- *   <站点目录>/portal/config.js     ← apiBase 留空（同源）
- *   <站点目录>/portal/config.php    ← 只有这个要改：填 AGHub 地址
- *
- * 访问 https://你的域名/portal/ 即可。
- *
- * 兼容 PHP 7.4（不用 str_starts_with 等 PHP 8 才有的函数）。
+ * 整个页面由 PHP 渲染：浏览器只会请求本站，页面里没有任何对 AGHub 的
+ * 浏览器端调用。所以既没有跨域，也没有混合内容 —— 这一跳是 PHP 在服务端
+ * 完成的，http/https 都行，跟本站是不是 https 无关。
  */
 
 declare(strict_types=1);
 
-// ----------------------------------------------------------------- 配置读取
+require_once __DIR__ . '/lib.php';
 
-$configFile = __DIR__ . '/config.php';
-if (!is_file($configFile)) {
-    http_response_code(500);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo "缺少 config.php\n\n";
-    echo "把同目录下的 config.sample.php 复制成 config.php，填上 AGHub 地址即可：\n";
-    echo "    cp config.sample.php config.php\n";
-    exit;
-}
+session_boot();
 
-$CONFIG = require $configFile;
+$page = isset($_GET['p']) ? (string) $_GET['p'] : '';
+$flash_error = '';
+$flash_ok = '';
 
-$AGHUB_URL = rtrim((string)($CONFIG['aghub_url'] ?? ''), '/');
-$PREFIX    = '/' . trim((string)($CONFIG['prefix'] ?? 'portal'), '/');
-$TIMEOUT   = (int)($CONFIG['timeout'] ?? 20);
-$VERIFY_TLS = (bool)($CONFIG['verify_tls'] ?? true);
+// ------------------------------------------------------------------ 处理动作
 
-if ($AGHUB_URL === '') {
-    http_response_code(500);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo "config.php 里的 aghub_url 是空的，填上 AGHub 的地址，例如 http://36.133.104.222:3000\n";
-    exit;
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
 
-// ----------------------------------------------------------------- 工具函数
+    if (!csrf_ok()) {
+        $flash_error = '页面已过期，请重新提交。';
+    } elseif ($action === 'login') {
+        $login = trim(isset($_POST['login']) ? (string) $_POST['login'] : '');
+        $password = isset($_POST['password']) ? (string) $_POST['password'] : '';
 
-/** 浏览器那一侧是不是 https。反代后面靠 X-Forwarded-Proto 判断。 */
-function browser_is_https(): bool
-{
-    if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
-        return true;
-    }
-    if (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443) {
-        return true;
-    }
-    $proto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
-    return strtolower(trim((string)$proto)) === 'https';
-}
+        if ($login === '' || $password === '') {
+            $flash_error = '请填写用户名和密码。';
+        } else {
+            $r = aghub('POST', '/portal/api/login', array(
+                'login' => $login,
+                'password' => $password,
+            ));
 
-/** 当前请求的路径（不含查询串）。 */
-function request_path(): string
-{
-    $uri  = (string)($_SERVER['REQUEST_URI'] ?? '/');
-    $path = parse_url($uri, PHP_URL_PATH);
-    return is_string($path) && $path !== '' ? $path : '/';
-}
-
-/**
- * 会话 cookie 的兜底改写。
- *
- * AGHub 靠 X-Forwarded-Proto 判断浏览器那一侧是不是 https，正常情况下这里
- * 什么都不用改。但如果两边的协议对不上——比如 PHP 到 AGHub 走的是 https、
- * 而浏览器这边是 http——AGHub 会下发 Secure，浏览器在明文下会直接丢掉它，
- * 表现就是"登录提示成功，一刷新又掉线"。所以按浏览器实际的协议兜一道。
- */
-function fix_set_cookie(string $cookie, bool $browserHttps): string
-{
-    if ($browserHttps) {
-        return $cookie;
-    }
-
-    // 明文 http 下 Secure 会让浏览器直接丢弃这个 cookie。
-    $cookie = preg_replace('/;\s*Secure\b/i', '', $cookie);
-
-    // SameSite=None 必须搭配 Secure，没有 Secure 时浏览器同样会丢。同源场景
-    // 用 Lax 就够。
-    $cookie = preg_replace('/;\s*SameSite=None\b/i', '; SameSite=Lax', $cookie);
-
-    return $cookie;
-}
-
-// ----------------------------------------------------------------- 路由
-
-$path = request_path();
-
-// 1) 接口请求：转发给 AGHub。
-if (strncmp($path, $PREFIX . '/api/', strlen($PREFIX) + 5) === 0) {
-    proxy_api($path);
-    exit;
-}
-
-// 2) 其余路径：返回前端页面。
-serve_frontend($path);
-
-// ----------------------------------------------------------------- 反代实现
-
-function proxy_api(string $path): void
-{
-    global $AGHUB_URL, $TIMEOUT, $VERIFY_TLS;
-
-    $target = $AGHUB_URL . $path;
-
-    $query = (string)($_SERVER['QUERY_STRING'] ?? '');
-    if ($query !== '') {
-        $target .= '?' . $query;
-    }
-
-    $ch = curl_init($target);
-    if ($ch === false) {
-        fail('无法初始化 cURL 会话。请确认 PHP 装了 curl 扩展。');
-    }
-
-    // ---- 请求头：只带必要的几个。
-    //
-    // 刻意不转发 Origin：AGHub 看到 Origin 会按跨域处理，下发的 cookie 变成
-    // SameSite=None（需要 Secure，明文下会被丢）。这里浏览器跟 PHP 是同源，
-    // 不带 Origin 才是对的。
-    $headers = array();
-    foreach (array('CONTENT_TYPE' => 'Content-Type', 'HTTP_ACCEPT' => 'Accept') as $key => $name) {
-        if (!empty($_SERVER[$key])) {
-            $headers[] = $name . ': ' . $_SERVER[$key];
-        }
-    }
-    if (!empty($_SERVER['HTTP_COOKIE'])) {
-        $headers[] = 'Cookie: ' . $_SERVER['HTTP_COOKIE'];
-    }
-
-    // 让 AGHub 知道浏览器那一侧的真实协议。
-    $scheme = browser_is_https() ? 'https' : 'http';
-    $headers[] = 'X-Forwarded-Proto: ' . $scheme;
-    if (!empty($_SERVER['REMOTE_ADDR'])) {
-        $headers[] = 'X-Forwarded-For: ' . $_SERVER['REMOTE_ADDR'];
-    }
-
-    // ---- 请求体
-    $body = file_get_contents('php://input');
-    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-
-    $responseHeaders = array();
-
-    curl_setopt_array($ch, array(
-        CURLOPT_CUSTOMREQUEST  => $method,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER     => $headers,
-        CURLOPT_TIMEOUT        => $TIMEOUT,
-        CURLOPT_CONNECTTIMEOUT => min(10, $TIMEOUT),
-        CURLOPT_FOLLOWLOCATION => false,
-        CURLOPT_SSL_VERIFYPEER => $VERIFY_TLS,
-        CURLOPT_SSL_VERIFYHOST => $VERIFY_TLS ? 2 : 0,
-        CURLOPT_HEADERFUNCTION => function ($ch, string $line) use (&$responseHeaders) {
-            $trimmed = trim($line);
-            if ($trimmed !== '') {
-                $responseHeaders[] = $trimmed;
+            if ($r['ok'] && !empty($r['data']['token'])) {
+                session_regenerate_id(true);
+                $_SESSION['aghub_token'] = (string) $r['data']['token'];
+                unset($_SESSION['csrf']);
+                redirect(page_url());
             }
-            return strlen($line);
-        },
-    ));
 
-    if ($body !== false && $body !== '' && in_array($method, array('POST', 'PUT', 'PATCH', 'DELETE'), true)) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    }
-
-    $responseBody = curl_exec($ch);
-    $errNo        = curl_errno($ch);
-    $errMsg       = curl_error($ch);
-    $status       = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($errNo !== 0 || $responseBody === false) {
-        fail('连不上 AGHub（' . $AGHUB_URL . '）：' . $errMsg, 502);
-    }
-
-    // ---- 回传状态码与响应头
-    http_response_code($status > 0 ? $status : 502);
-
-    $browserHttps = browser_is_https();
-    $seenCookie   = false;
-
-    foreach ($responseHeaders as $line) {
-        $lower = strtolower($line);
-
-        // Content-Length 由 PHP 自己算，转发会导致截断或挂住。
-        if (strpos($lower, 'content-length:') === 0) {
-            continue;
+            $flash_error = $r['error'] !== '' ? $r['error'] : '用户名或密码不对。';
         }
-        // 长度交给 PHP；分块编码也要去掉。
-        if (strpos($lower, 'transfer-encoding:') === 0) {
-            continue;
-        }
-        if (strpos($lower, 'connection:') === 0) {
-            continue;
-        }
+    } elseif ($action === 'logout') {
+        aghub('POST', '/portal/api/logout', array(), session_token());
+        session_forget();
+        redirect(page_url());
+    } elseif ($action === 'password') {
+        if (session_token() === '') {
+            $flash_error = '请先登录。';
+        } else {
+            $old = isset($_POST['old_password']) ? (string) $_POST['old_password'] : '';
+            $new = isset($_POST['new_password']) ? (string) $_POST['new_password'] : '';
+            $again = isset($_POST['new_password2']) ? (string) $_POST['new_password2'] : '';
 
-        if (strpos($lower, 'set-cookie:') === 0) {
-            $seenCookie = true;
-            header('Set-Cookie: ' . fix_set_cookie(substr($line, 11), $browserHttps), false);
-            continue;
-        }
+            if ($new !== $again) {
+                $flash_error = '两次输入的新密码不一样。';
+            } elseif (strlen($new) < 8) {
+                $flash_error = '新密码至少要 8 位。';
+            } else {
+                $r = aghub('POST', '/portal/api/password', array(
+                    'old_password' => $old,
+                    'new_password' => $new,
+                ), session_token());
 
-        header($line, false);
+                if ($r['ok']) {
+                    $flash_ok = '密码已修改。';
+                } else {
+                    $flash_error = $r['error'];
+                }
+            }
+        }
+    } elseif ($action === 'register') {
+        $name = trim(isset($_POST['name']) ? (string) $_POST['name'] : '');
+        $email = trim(isset($_POST['email']) ? (string) $_POST['email'] : '');
+        $password = isset($_POST['password']) ? (string) $_POST['password'] : '';
+
+        $r = aghub('POST', '/portal/api/register', array(
+            'name' => $name,
+            'email' => $email,
+            'password' => $password,
+        ));
+
+        if ($r['ok']) {
+            $flash_ok = '注册成功，现在可以登录了。';
+            $page = '';
+        } else {
+            $flash_error = $r['error'];
+        }
     }
-
-    // 后端没给 cookie 时不要凭空造一个，但要让 PHP 知道这里没有 cookie 可发。
-    if (!$seenCookie) {
-        // 什么都不做：header() 列表里本来就没有 Set-Cookie。
-    }
-
-    echo $responseBody;
 }
 
-function fail(string $message, int $status = 500): void
-{
-    http_response_code($status);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(array(
-        'error'   => $message,
-        'hint'    => '检查 config.php 里的 aghub_url，以及在浏览器里直接打开该地址看通不通。',
-    ), JSON_UNESCAPED_UNICODE);
-    exit;
+// ------------------------------------------------------------------ 取数据
+
+$logged = session_token() !== '';
+
+// 公共统计：未登录也要看得到。
+$pub = aghub('GET', '/portal/api/public');
+$public = $pub['ok'] ? $pub['data'] : array();
+
+// 站点配置（注册开关、公告）。
+$cfg_r = aghub('GET', '/portal/api/config');
+$site = $cfg_r['ok'] ? $cfg_r['data'] : array();
+
+$user = array();
+$log = array();
+
+if ($logged) {
+    $me = aghub('GET', '/portal/api/me', null, session_token());
+
+    if ($me['ok']) {
+        $user = isset($me['data']['user']) && is_array($me['data']['user']) ? $me['data']['user'] : array();
+    } elseif ($me['status'] === 401) {
+        // 会话在 AGHub 那边失效了。
+        session_forget();
+        $logged = false;
+        $flash_error = '登录状态已失效，请重新登录。';
+    } else {
+        $flash_error = $me['error'];
+    }
 }
 
-// ----------------------------------------------------------------- 前端
-
-function serve_frontend(string $path): void
-{
-    global $PREFIX;
-
-    // 只服务白名单文件，避免变成任意文件读取。
-    $name = basename($path);
-    if ($name === '' || $name === '/') {
-        $name = 'index.html';
+if ($logged && $page === 'log') {
+    $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
+    if ($limit < 10 || $limit > 200) {
+        $limit = 50;
     }
 
-    $allowed = array(
-        'index.html' => 'text/html; charset=utf-8',
-        'config.js'  => 'application/javascript; charset=utf-8',
-    );
-
-    if (!isset($allowed[$name])) {
-        // 前端是单页，未知路径统一回首页。
-        $name = 'index.html';
+    $r = aghub('GET', '/portal/api/log?limit=' . $limit, null, session_token());
+    if ($r['ok']) {
+        $log = isset($r['data']['data']) && is_array($r['data']['data']) ? $r['data']['data'] : array();
+    } else {
+        $flash_error = $r['error'];
     }
-
-    $file = __DIR__ . '/' . $name;
-    if (!is_file($file)) {
-        http_response_code(500);
-        header('Content-Type: text/plain; charset=utf-8');
-        echo "缺少前端文件 " . $name . "。\n\n";
-        echo "从 AGHub 管理端的「门户」页面下载门户部署包，把里面的 index.html 和\n";
-        echo "config.js 上传到本目录（" . __DIR__ . "）即可。\n";
-        exit;
-    }
-
-    header('Content-Type: ' . $allowed[$name]);
-    header('Cache-Control: no-cache');
-    readfile($file);
 }
+
+$domain = isset($public['domain']) ? (string) $public['domain'] : '';
+$ids = isset($user['ids']) && is_array($user['ids']) ? $user['ids'] : array();
+$primary_id = $ids !== array() ? (string) $ids[0] : '';
+
+// ------------------------------------------------------------------ 渲染
+
+$title = (string) cfg('title', 'DNS 服务');
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h($title) ?></title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 7l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9v-6z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="<?= h(page_url()) ?>"><?= h($title) ?></a>
+    <nav>
+      <?php if ($logged): ?>
+        <a href="<?= h(page_url()) ?>"<?= $page === '' ? ' class="on"' : '' ?>>概览</a>
+        <a href="<?= h(page_url('log')) ?>"<?= $page === 'log' ? ' class="on"' : '' ?>>查询日志</a>
+        <a href="<?= h(page_url('account')) ?>"<?= $page === 'account' ? ' class="on"' : '' ?>>账号</a>
+        <form method="post" class="inline">
+          <input type="hidden" name="action" value="logout">
+          <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+          <button type="submit" class="link">退出</button>
+        </form>
+      <?php else: ?>
+        <a href="#login">登录</a>
+        <?php if (!empty($site['registration_open'])): ?>
+          <a href="<?= h(page_url('register')) ?>">注册</a>
+        <?php endif; ?>
+      <?php endif; ?>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+<?php if ($flash_error !== ''): ?>
+  <div class="alert bad"><?= h($flash_error) ?></div>
+<?php endif; ?>
+<?php if ($flash_ok !== ''): ?>
+  <div class="alert good"><?= h($flash_ok) ?></div>
+<?php endif; ?>
+<?php if (empty($public)): ?>
+  <div class="alert bad">
+    读不到 AGHub 的数据。<?= h($pub['error']) ?>
+    <br>检查 config.php 里的 <code>aghub_url</code> 和 <code>token</code>。
+  </div>
+<?php endif; ?>
+<?php if (isset($site['announcement']) && $site['announcement'] !== ''): ?>
+  <div class="notice"><?= nl2br(h($site['announcement'])) ?></div>
+<?php endif; ?>
+
+<?php if ($page === 'log' && $logged): ?>
+  <?php require __DIR__ . '/page_log.php'; ?>
+<?php elseif ($page === 'account' && $logged): ?>
+  <?php require __DIR__ . '/page_account.php'; ?>
+<?php elseif ($page === 'register' && !$logged && !empty($site['registration_open'])): ?>
+  <?php require __DIR__ . '/page_register.php'; ?>
+<?php elseif ($logged): ?>
+  <?php require __DIR__ . '/page_panel.php'; ?>
+<?php else: ?>
+  <?php require __DIR__ . '/page_public.php'; ?>
+<?php endif; ?>
+</main>
+
+<footer class="wrap foot">
+  <span>由 <strong>AGHub</strong> 提供 DNS 服务</span>
+</footer>
+</body>
+</html>
