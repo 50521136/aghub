@@ -1111,5 +1111,12 @@
   "yes_disable": "Yes, disable",
   "yes_disallow": "Yes, disallow",
   "yes_remove": "Yes, remove",
-  "yes_reset": "Yes, reset"
+  "yes_reset": "Yes, reset",
+  "portal_feedback_title": "User feedback",
+  "portal_feedback_hint": "Messages left through the portal. They are only visible here.",
+  "portal_feedback_empty": "No messages yet.",
+  "portal_feedback_delete": "Delete",
+  "portal_feedback_mark_read": "Mark all as read",
+  "portal_feedback_reload": "Refresh",
+  "portal_feedback_load_failed": "Could not load feedback"
 }

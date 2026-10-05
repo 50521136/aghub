@@ -54,6 +54,107 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 func (m *Manager) RegisterAdmin(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/control/portal/package", m.handlePackage)
 	reg.Register(http.MethodPost, "/control/portal/mail/test", m.handleMailTest)
+	reg.Register(http.MethodGet, "/control/portal/feedback", m.handleFeedbackList)
+	reg.Register(http.MethodPost, "/control/portal/feedback/read", m.handleFeedbackRead)
+	reg.Register(http.MethodPost, "/control/portal/feedback/delete", m.handleFeedbackDelete)
+}
+
+// feedbackListResponse is the response of the GET /control/portal/feedback HTTP
+// API.
+type feedbackListResponse struct {
+	// Items is the messages, newest first.
+	Items []*users.Feedback `json:"items"`
+
+	// Unread is how many of them have not been opened.
+	Unread int `json:"unread"`
+}
+
+// handleFeedbackList is the handler for the GET /control/portal/feedback HTTP
+// API.
+//
+// The portal accepts messages from users and, until this existed, put them
+// somewhere the administrator had no way to read.  It is administrator-only:
+// the messages carry contact details, so they are not part of the public API.
+func (m *Manager) handleFeedbackList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 500 {
+			aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "invalid limit")
+
+			return
+		}
+
+		limit = n
+	}
+
+	items := m.users.ListFeedback(limit)
+	if items == nil {
+		items = []*users.Feedback{}
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &feedbackListResponse{
+		Items:  items,
+		Unread: m.users.CountUnreadFeedback(),
+	})
+}
+
+// feedbackDeleteRequest is the request of the POST /control/portal/feedback/delete
+// HTTP API.
+type feedbackDeleteRequest struct {
+	// ID is the message to remove.
+	ID string `json:"id"`
+}
+
+// handleFeedbackDelete is the handler for the
+// POST /control/portal/feedback/delete HTTP API.
+func (m *Manager) handleFeedbackDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	req := &feedbackDeleteRequest{}
+
+	err := json.NewDecoder(r.Body).Decode(req)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "decoding request: %s", err)
+
+		return
+	}
+
+	if req.ID == "" {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "id is required")
+
+		return
+	}
+
+	err = m.users.DeleteFeedback(req.ID)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "deleting: %s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &okResponse{})
+}
+
+// handleFeedbackRead is the handler for the POST /control/portal/feedback/read
+// HTTP API.  It marks every message as seen, which is what opening the page
+// means.
+func (m *Manager) handleFeedbackRead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	err := m.users.MarkFeedbackRead()
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "marking read: %s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &okResponse{})
 }
 
 // handlePackage is the handler for the GET /control/portal/package HTTP API.

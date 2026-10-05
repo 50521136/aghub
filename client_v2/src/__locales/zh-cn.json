@@ -1111,5 +1111,12 @@
   "yes_disable": "禁用",
   "yes_disallow": "是，禁止",
   "yes_remove": "是，移除",
-  "yes_reset": "重置"
+  "yes_reset": "重置",
+  "portal_feedback_title": "用户反馈",
+  "portal_feedback_hint": "用户在门户里提交的消息，只有这里能看到。",
+  "portal_feedback_empty": "还没有反馈。",
+  "portal_feedback_delete": "删除",
+  "portal_feedback_mark_read": "全部标为已读",
+  "portal_feedback_reload": "刷新",
+  "portal_feedback_load_failed": "读取反馈失败"
 }

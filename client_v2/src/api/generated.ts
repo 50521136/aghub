@@ -1701,6 +1701,83 @@ export const portalPackage = async (options?: RequestInit): Promise<Blob> => {
     return response.blob();
 };
 
+/**
+ * A single message left by a portal user.
+ */
+export type PortalFeedback = {
+    /** @summary Server-assigned identifier */
+    id: string;
+    /** @summary Account that sent it */
+    uid?: string;
+    /** @summary Display name at the time of writing */
+    name?: string;
+    /** @summary Optional way to reach the sender */
+    contact?: string;
+    /** @summary The message itself */
+    content: string;
+    /** @summary Unix timestamp, in seconds */
+    created_at: number;
+    /** @summary Whether an administrator has opened it */
+    read: boolean;
+};
+
+/**
+ * The response of the feedback list.
+ */
+export type PortalFeedbackList = {
+    items: PortalFeedback[];
+    unread: number;
+};
+
+export const getPortalFeedbackUrl = () => {
+    return `control/portal/feedback`;
+};
+
+/**
+ * @summary List the messages left by portal users
+ */
+export const portalFeedbackList = async (
+    options?: RequestInit,
+): Promise<PortalFeedbackList> => {
+    return customFetch<PortalFeedbackList>(getPortalFeedbackUrl(), {
+        ...options,
+        method: 'GET',
+    });
+};
+
+export const getPortalFeedbackReadUrl = () => {
+    return `control/portal/feedback/read`;
+};
+
+/**
+ * @summary Mark every message as read
+ */
+export const portalFeedbackRead = async (options?: RequestInit): Promise<void> => {
+    return customFetch<void>(getPortalFeedbackReadUrl(), {
+        ...options,
+        method: 'POST',
+    });
+};
+
+export const getPortalFeedbackDeleteUrl = () => {
+    return `control/portal/feedback/delete`;
+};
+
+/**
+ * @summary Delete one message
+ */
+export const portalFeedbackDelete = async (
+    portalFeedbackDeleteRequest: { id: string },
+    options?: RequestInit,
+): Promise<void> => {
+    return customFetch<void>(getPortalFeedbackDeleteUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(portalFeedbackDeleteRequest),
+    });
+};
+
 export const getPortalMailTestUrl = () => {
     return `control/portal/mail/test`;
 };

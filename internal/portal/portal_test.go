@@ -80,6 +80,45 @@ func (s *testUserStore) Ranking(limit int) (r []users.RankEntry) {
 	return s.ranking
 }
 
+func (s *testUserStore) ListFeedback(limit int) (r []*users.Feedback) {
+	if len(s.feedback) > limit && limit > 0 {
+		return s.feedback[len(s.feedback)-limit:]
+	}
+
+	return s.feedback
+}
+
+func (s *testUserStore) DeleteFeedback(id string) (err error) {
+	kept := s.feedback[:0]
+	for _, f := range s.feedback {
+		if f.ID != id {
+			kept = append(kept, f)
+		}
+	}
+
+	s.feedback = kept
+
+	return nil
+}
+
+func (s *testUserStore) MarkFeedbackRead() (err error) {
+	for _, f := range s.feedback {
+		f.Read = true
+	}
+
+	return nil
+}
+
+func (s *testUserStore) CountUnreadFeedback() (n int) {
+	for _, f := range s.feedback {
+		if !f.Read {
+			n++
+		}
+	}
+
+	return n
+}
+
 func (s *testUserStore) AddFeedback(f *users.Feedback) (saved *users.Feedback, err error) {
 	if f.Content == "" {
 		return nil, fmt.Errorf("feedback: empty message")

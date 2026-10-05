@@ -54,3 +54,74 @@
     display: flex;
     justify-content: flex-end;
 }
+
+.badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--product-primary-50);
+    color: var(--default-main-text);
+}
+
+.feedbackList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.feedbackItem {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 10px;
+}
+
+/* Unread messages get a stripe instead of a colour fill, so the text keeps
+   its normal contrast. */
+.feedbackNew {
+    border-inline-start: 3px solid var(--product-primary-50);
+}
+
+.feedbackHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.feedbackWho {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    color: var(--default-main-text);
+}
+
+.feedbackId {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--default-background);
+    color: var(--default-description-text);
+}
+
+.feedbackTime {
+    flex: 0 0 auto;
+    color: var(--default-description-text);
+}
+
+.feedbackMail {
+    color: var(--default-description-text);
+    word-break: break-all;
+}
+
+.feedbackText {
+    margin: 0;
+    color: var(--default-main-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

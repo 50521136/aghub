@@ -669,6 +669,7 @@ function icon(string $name, string $class = ''): string
         'globe' => '<circle cx="12" cy="12" r="8.5"/>'
             . '<path d="M3.5 12h17M12 3.5c2.4 2.4 2.4 14.6 0 17M12 3.5c-2.4 2.4-2.4 14.6 0 17"/>',
         'clock' => '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+        'download' => '<path d="M12 3.5v11M8 11l4 4 4-4"/><path d="M4.5 19.5h15"/>',
         'send' => '<path d="M20.5 3.5 3.5 10.5l6.5 2.5 2.5 6.5 8-16Z"/><path d="M10 13l4-4"/>',
     );
 
@@ -677,6 +678,160 @@ function icon(string $name, string $class = ''): string
     return '<svg class="ic ' . h($class) . '" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
         . ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
         . $body . '</svg>';
+}
+
+/**
+ * linechart 用内联 SVG 画折线图，不需要 canvas，也不需要外部图表库。
+ *
+ * 柱状图看总量，折线图看趋势 —— 近 7 天这种序列，折线更能看出是涨是跌。
+ *
+ * $values 形如 array(标签 => 数值)，标签用于横轴和悬停提示。
+ */
+function linechart(array $values, int $height = 120): string
+{
+    $n = count($values);
+    if ($n === 0) {
+        return '';
+    }
+
+    $vals = array_values($values);
+    $labels = array_keys($values);
+
+    $peak = max($vals);
+    $peak = $peak > 0 ? $peak : 1;
+
+    // 视图坐标系：留出上下边距，曲线不贴边。
+    $w = 320;
+    $padT = 14;
+    $padB = 14;
+    $plotH = $height - $padT - $padB;
+    $step = $n > 1 ? ($w / ($n - 1)) : 0;
+
+    $pts = array();
+    foreach ($vals as $i => $v) {
+        $x = $n > 1 ? $i * $step : $w / 2;
+        $y = $padT + $plotH - ((int) $v * $plotH / $peak);
+        $pts[] = array(round($x, 2), round($y, 2));
+    }
+
+    $line = array();
+    foreach ($pts as $pt) {
+        $line[] = $pt[0] . ',' . $pt[1];
+    }
+
+    // 面积路径：从曲线两端垂直落到底部再闭合。
+    $area = 'M' . $pts[0][0] . ',' . ($padT + $plotH) . ' L'
+        . implode(' L', $line) . ' L' . $pts[$n - 1][0] . ',' . ($padT + $plotH) . ' Z';
+
+    $out = '<svg class="lc" viewBox="0 0 ' . $w . ' ' . $height . '" preserveAspectRatio="none"'
+        . ' role="img" aria-label="近 7 天用量趋势">';
+
+    $out .= '<defs><linearGradient id="lcFill" x1="0" y1="0" x2="0" y2="1">'
+        . '<stop offset="0%" stop-color="#2563eb" stop-opacity="0.22"/>'
+        . '<stop offset="100%" stop-color="#2563eb" stop-opacity="0.02"/>'
+        . '</linearGradient></defs>';
+
+    // 三条参考线，让高度有个参照。
+    for ($g = 1; $g <= 3; $g++) {
+        $gy = round($padT + $plotH * $g / 4, 2);
+        $out .= '<line x1="0" y1="' . $gy . '" x2="' . $w . '" y2="' . $gy . '"'
+            . ' class="lc-grid"/>';
+    }
+
+    $out .= '<path d="' . $area . '" fill="url(#lcFill)"/>';
+    $out .= '<polyline points="' . implode(' ', $line) . '" class="lc-line"/>';
+
+    foreach ($pts as $i => $pt) {
+        $title = h((string) $labels[$i] . '：' . num_h($vals[$i]) . ' 次');
+        $out .= '<circle cx="' . $pt[0] . '" cy="' . $pt[1] . '" r="3.4" class="lc-dot">'
+            . '<title>' . $title . '</title></circle>';
+    }
+
+    $out .= '</svg>';
+
+    return $out;
+}
+
+/**
+ * mobileconfig 生成 iOS 的加密 DNS 描述文件。
+ *
+ * iOS 上装 DoT 不能像安卓那样填个主机名就完事，必须走 .mobileconfig。手工做
+ * 一份容易写错 UUID 和键名，所以这里按标识现拼。
+ *
+ * UUID 由标识推导，不是随机的：同一台设备重复安装是更新而不是叠出好几份。
+ */
+function mobileconfig(string $id, string $domain, string $title = 'DNS 服务'): string
+{
+    $host = dot_host($id, $domain);
+    if ($host === '') {
+        return '';
+    }
+
+    // 由标识推导出稳定的 UUID（版本 5 风格的形状，够 iOS 用）。
+    $seed = $host . '|aghub';
+    $u = function (string $what) use ($seed): string {
+        $h = md5($what . '|' . $seed);
+
+        return substr($h, 0, 8) . '-' . substr($h, 8, 4) . '-' . substr($h, 12, 4)
+            . '-' . substr($h, 16, 4) . '-' . substr($h, 20, 12);
+    };
+
+    $payload_uuid = $u('payload');
+    $profile_uuid = $u('profile');
+
+    $label = h($title . ' · ' . $id);
+
+    $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+        . '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
+        . ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' . "\n"
+        . '<plist version="1.0">' . "\n"
+        . '<dict>' . "\n"
+        . '  <key>PayloadContent</key>' . "\n"
+        . '  <array>' . "\n"
+        . '    <dict>' . "\n"
+        . '      <key>DNSSettings</key>' . "\n"
+        . '      <dict>' . "\n"
+        . '        <key>DNSProtocol</key>' . "\n"
+        . '        <string>TLS</string>' . "\n"
+        . '        <key>ServerName</key>' . "\n"
+        . '        <string>' . h($host) . '</string>' . "\n"
+        . '        <key>ServerURL</key>' . "\n"
+        . '        <string></string>' . "\n"
+        . '      </dict>' . "\n"
+        . '      <key>PayloadDescription</key>' . "\n"
+        . '      <string>加密 DNS 解析，走 DoT。</string>' . "\n"
+        . '      <key>PayloadDisplayName</key>' . "\n"
+        . '      <string>' . $label . '</string>' . "\n"
+        . '      <key>PayloadIdentifier</key>' . "\n"
+        . '      <string>com.aghub.dns.' . h($id) . '</string>' . "\n"
+        . '      <key>PayloadType</key>' . "\n"
+        . '      <string>com.apple.dnsSettings.managed</string>' . "\n"
+        . '      <key>PayloadUUID</key>' . "\n"
+        . '      <string>' . $payload_uuid . '</string>' . "\n"
+        . '      <key>PayloadVersion</key>' . "\n"
+        . '      <integer>1</integer>' . "\n"
+        . '    </dict>' . "\n"
+        . '  </array>' . "\n"
+        . '  <key>PayloadDescription</key>' . "\n"
+        . '  <string>安装后本机 DNS 会走加密解析。</string>' . "\n"
+        . '  <key>PayloadDisplayName</key>' . "\n"
+        . '  <string>' . $label . '</string>' . "\n"
+        . '  <key>PayloadIdentifier</key>' . "\n"
+        . '  <string>com.aghub.profile.' . h($id) . '</string>' . "\n"
+        . '  <key>PayloadOrganization</key>' . "\n"
+        . '  <string>' . h($title) . '</string>' . "\n"
+        . '  <key>PayloadRemovalDisallowed</key>' . "\n"
+        . '  <false/>' . "\n"
+        . '  <key>PayloadType</key>' . "\n"
+        . '  <string>Configuration</string>' . "\n"
+        . '  <key>PayloadUUID</key>' . "\n"
+        . '  <string>' . $profile_uuid . '</string>' . "\n"
+        . '  <key>PayloadVersion</key>' . "\n"
+        . '  <integer>1</integer>' . "\n"
+        . '</dict>' . "\n"
+        . '</plist>' . "\n";
+
+    return $xml;
 }
 
 /** sparkline 用 div 画一个迷你柱状图，不需要 canvas。 */

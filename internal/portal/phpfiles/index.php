@@ -17,7 +17,7 @@ $nav = nav_items();
 
 // 除了四个标签页，还有两个挂在它们下面的页面：日志在「我的」里，注册在登录流程里。
 // 这两个不在导航表里，所以不能拿导航表当白名单。
-$extra = array('log' => 'me', 'register' => 'me');
+$extra = array('log' => 'me', 'register' => 'me', 'ios' => 'me');
 
 $page = isset($_GET['p']) ? (string) $_GET['p'] : 'report';
 if (!isset($nav[$page]) && !isset($extra[$page])) {
@@ -167,6 +167,9 @@ if ($logged) {
 if ($logged && $page === 'log') {
     $want['log:' . md5($log_q)] = array(array('GET', $log_q, null, $session), 30);
 }
+if ($page === 'ranking') {
+    $want['ranking'] = array(array('GET', '/portal/api/ranking?limit=30'), 60);
+}
 
 $got = fetch_all($want);
 
@@ -208,9 +211,17 @@ if ($logged && $page === 'log' && isset($got['log:' . md5($log_q)])) {
     }
 }
 
+$rank_r = isset($got['ranking']) ? $got['ranking']['v'] : array();
+$entries = array();
+if (is_array($rank_r) && !empty($rank_r['ok'])) {
+    $entries = isset($rank_r['data']['entries']) && is_array($rank_r['data']['entries'])
+        ? $rank_r['data']['entries'] : array();
+}
+
 $domain = isset($public['domain']) ? (string) $public['domain'] : '';
 $ids = isset($user['ids']) && is_array($user['ids']) ? $user['ids'] : array();
 $primary_id = $ids !== array() ? (string) $ids[0] : '';
+$title_hint = (string) cfg('title', 'DNS 服务');
 
 // 当前访问者是否已经通过加密 DNS 接进来了：拿他的地址和账号里记的比。
 $client = isset($user['client']) && is_array($user['client']) ? $user['client'] : array();
@@ -218,6 +229,25 @@ $visitor_ip = client_ip();
 $connected = false;
 if ($logged && !empty($client['connected'])) {
     $connected = true;
+}
+
+// ------------------------------------------------------------------ 描述文件
+
+// iOS 的加密 DNS 要装一个描述文件。这里现拼一个给它下载，不用管理员手工做。
+if ($page === 'ios') {
+    if (!$logged || $primary_id === '') {
+        redirect(page_url('me'));
+    }
+
+    $mc = mobileconfig($primary_id, $domain !== '' ? $domain : $host, $title_hint);
+
+    header('Content-Type: application/x-apple-aspen-config; charset=utf-8');
+    header('Content-Disposition: attachment; filename="dns.mobileconfig"');
+    header('Content-Length: ' . strlen($mc));
+    header('Cache-Control: no-store');
+
+    echo $mc;
+    exit;
 }
 
 // ------------------------------------------------------------------ 渲染

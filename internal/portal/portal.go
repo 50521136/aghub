@@ -107,6 +107,20 @@ type UserStore interface {
 	// displays: a name, an identifier and a count.
 	Ranking(limit int) (r []users.RankEntry)
 
+	// ListFeedback returns the messages left by portal users, newest first.
+	// It is administrator-only: the portal itself never reads it back.
+	ListFeedback(limit int) (r []*users.Feedback)
+
+	// DeleteFeedback removes one message by its ID.
+	DeleteFeedback(id string) (err error)
+
+	// MarkFeedbackRead marks every message as seen.
+	MarkFeedbackRead() (err error)
+
+	// CountUnreadFeedback returns how many messages the administrator has
+	// not opened yet.
+	CountUnreadFeedback() (n int)
+
 	// AddFeedback stores a message from a portal user.
 	AddFeedback(f *users.Feedback) (saved *users.Feedback, err error)
 

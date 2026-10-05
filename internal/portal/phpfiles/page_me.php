@@ -24,7 +24,6 @@ $bar = $p >= 90 ? ' danger' : ($p >= 70 ? ' warn' : '');
 $period = (string) ($user['period'] ?? 'day');
 
 $dot = dot_host($primary_id, $domain);
-$doh = doh_url($primary_id, $domain);
 $client = isset($user['client']) && is_array($user['client']) ? $user['client'] : array();
 ?>
 <section class="me-head">
@@ -83,17 +82,14 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
       <span class="copy-v"><?= h($dot) ?></span>
       <button type="button" class="copy-b" onclick="copyThis(this)">复制</button>
     </div>
-    <div class="copy-row" data-copy="<?= h($doh) ?>">
-      <span class="copy-k">DoH 地址</span>
-      <span class="copy-v"><?= h($doh) ?></span>
-      <button type="button" class="copy-b" onclick="copyThis(this)">复制</button>
-    </div>
-    <div class="copy-row" data-copy="quic://<?= h($dot) ?>:853">
-      <span class="copy-k">DoQ</span>
-      <span class="copy-v">quic://<?= h($dot) ?>:853</span>
-      <button type="button" class="copy-b" onclick="copyThis(this)">复制</button>
-    </div>
-    <p class="hint">安卓填「私人 DNS」用上面那个主机名；iPhone 装 DoH 描述文件用 DoH 地址。</p>
+    <p class="hint">
+      安卓在「私人 DNS」里填上面那个主机名就行。
+      iPhone 装下面的描述文件，系统会自动把加密 DNS 配好。
+    </p>
+    <a class="btn btn-primary btn-block" href="<?= h(page_url('ios')) ?>">
+      <?= icon('download') ?>生成 iPhone 描述文件
+    </a>
+    <p class="hint">描述文件只包含这一个解析地址，装完可以在「设置 → 通用 → VPN与设备管理」里随时删掉。</p>
   <?php else: ?>
     <p class="hint">AGHub 还没配置域名，所以暂时没有接入地址。</p>
   <?php endif; ?>

@@ -37,9 +37,9 @@ $points = array_slice($points, -7, 7, true);
     <?php if ($connected): ?>
       解析正在加密传输，广告已经拦下
     <?php elseif ($logged): ?>
-      复制专属地址填进设备，回到本页就能看到战报
+      复制接入地址填进设备，回到本页就能看到战报
     <?php else: ?>
-      支持 DoT 与 DoH，登录后查看自己的标识与日志
+      加密 DNS 解析，登录后看自己的用量和日志
     <?php endif; ?>
   </p>
 </section>
@@ -75,12 +75,13 @@ $points = array_slice($points, -7, 7, true);
 <section class="card">
   <div class="card-head">
     <h2>我的近 7 天</h2>
-    <span class="card-note">柱高满格代表 <?= h(num_h(max($points))) ?> 次</span>
+    <span class="card-note">峰值 <?= h(num_h(max($points))) ?> 次</span>
   </div>
-  <?= sparkline($points) ?>
+  <?= linechart($points) ?>
   <div class="spark-axis">
-    <span><?= h((string) array_key_first($points)) ?></span>
-    <span>今天</span>
+    <?php foreach (array_keys($points) as $d): ?>
+      <span><?= h(substr((string) $d, 5)) ?></span>
+    <?php endforeach; ?>
   </div>
   <div class="spark-foot">
     <span>近 7 天共 <strong><?= h(num_h(array_sum($points))) ?></strong> 次</span>
@@ -130,9 +131,9 @@ $points = array_slice($points, -7, 7, true);
     <p class="hint">
       这个判断是看查询记录来的：只要设备在用 <?= h($host) ?> 解析，回到本页就会显示已接入。
       <?php if (!$logged): ?>
-        登录之后可以在「我的」里拿到自己的专属地址。
+        登录之后可以在「我的」里拿到接入地址。
       <?php else: ?>
-        去「我的」复制专属地址。
+        去「我的」复制接入地址。
       <?php endif; ?>
     </p>
   <?php endif; ?>
@@ -148,7 +149,7 @@ $points = array_slice($points, -7, 7, true);
 <section class="card cta">
   <div>
     <h2>登录查看自己的战报</h2>
-    <p class="hint">登录后可以看到专属标识、专属接入地址、自己的查询日志。</p>
+    <p class="hint">登录后可以看到自己的用量、接入地址和查询日志。</p>
   </div>
   <a class="btn btn-primary" href="<?= h(page_url('me')) ?>">去登录</a>
 </section>
