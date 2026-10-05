@@ -254,6 +254,7 @@ export const Portal = () => {
                     onInput={(e) => setApiBase(e.currentTarget.value)}
                     data-testid="portal-api-base"
                 />
+                <p class={cnHint()}>{intl.getMessage('portal_api_base_hint')}</p>
 
                 <Textarea
                     label={intl.getMessage('portal_origins')}

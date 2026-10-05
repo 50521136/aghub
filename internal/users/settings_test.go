@@ -264,28 +264,50 @@ func TestSettingsReqKeepsAbsentFields(t *testing.T) {
 	}
 }
 
-// TestSetSettingsRejectsHTTPSOriginWithPlainAPI checks the one combination of
-// portal settings that can never work: an HTTPS front-end cannot call a plain
-// HTTP API, because the browser blocks the request as mixed content and drops
-// the SameSite=None session cookie.
-func TestSetSettingsRejectsHTTPSOriginWithPlainAPI(t *testing.T) {
+// TestSetSettingsWarnsAboutHTTPSOriginWithPlainAPI checks the one combination
+// of portal settings that cannot work when the browser calls the API directly.
+//
+// It is stored anyway, with a warning.  The same combination is harmless when
+// the browser talks to a same-origin back-end -- the PHP back-end in the
+// portal package, or an nginx proxy -- because then the browser never uses
+// portal_api_base at all, and those are exactly the deployments that cannot
+// put a certificate on the AGHub host.  Refusing the save made the portal
+// impossible to configure for them.
+func TestSetSettingsWarnsAboutHTTPSOriginWithPlainAPI(t *testing.T) {
 	m, _ := newTestManager(t)
 
-	err := m.SetSettings(&Settings{
+	want := &Settings{
 		PortalAPIBase: "http://36.133.104.222:3000",
 		PortalOrigins: []string{"https://adguardhome.lv10.ren"},
-	})
-	if err == nil {
-		t.Fatal("expected the plain-HTTP API with an HTTPS origin to be refused")
 	}
 
-	if !strings.Contains(err.Error(), "portal_api_base") {
-		t.Fatalf("error should name the setting, got %q", err)
+	err := m.SetSettings(want)
+	if err != nil {
+		t.Fatalf("the combination has to be stored, not refused: %s", err)
 	}
 
-	// Nothing may have been stored.
-	if got := m.GetSettings().PortalAPIBase; got != "" {
-		t.Fatalf("settings were stored despite the error: %q", got)
+	// The settings really landed.
+	got := m.GetSettings()
+	if got.PortalAPIBase != want.PortalAPIBase {
+		t.Fatalf("api base not stored: %q", got.PortalAPIBase)
+	}
+	if len(got.PortalOrigins) != 1 || got.PortalOrigins[0] != want.PortalOrigins[0] {
+		t.Fatalf("origins not stored: %v", got.PortalOrigins)
+	}
+
+	// And the warning names the setting, so the administrator can act on it.
+	w := SettingsWarning(got)
+	if !strings.Contains(w, "portal_api_base") {
+		t.Fatalf("warning should name the setting, got %q", w)
+	}
+	if !strings.Contains(w, "same-origin") {
+		t.Fatalf("warning should mention the same-origin route, got %q", w)
+	}
+
+	// It has to point at the same-origin back-end too, not only at TLS: that
+	// is the route most deployments actually take.
+	if !strings.Contains(w, "PHP") {
+		t.Fatalf("warning should mention the PHP back-end, got %q", w)
 	}
 }
 

@@ -125,6 +125,11 @@ type importReq struct {
 type settingsResp struct {
 	// Settings is the manager-wide configuration.
 	Settings *settingsResponse `json:"settings"`
+
+	// Warning describes a combination that is very likely a mistake but that
+	// the manager still stores, so that the administrator sees the problem
+	// without being blocked from saving.  Empty when there is nothing to say.
+	Warning string `json:"warning,omitempty"`
 }
 
 // bulkAddReq is the request of the POST /control/users/bulk-add HTTP API.
@@ -236,7 +241,11 @@ func (m *Manager) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &settingsResp{Settings: settingsForAPI(m.GetSettings())})
+	cur := m.GetSettings()
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &settingsResp{
+		Settings: settingsForAPI(cur),
+		Warning:  SettingsWarning(cur),
+	})
 }
 
 // settingsReq is the request body of the POST /control/users/settings HTTP

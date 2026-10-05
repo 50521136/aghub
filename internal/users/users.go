@@ -1222,17 +1222,8 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 		return fmt.Errorf("users: settings are nil")
 	}
 
-	// An HTTPS front-end can never call a plain HTTP API: the browser blocks
-	// the request as mixed content, and the cross-origin session cookie is
-	// dropped because SameSite=None requires Secure.  The combination fails
-	// with nothing but "Failed to fetch" in the console, so refuse it here
-	// instead of letting the administrator deploy something that cannot log in.
-	if isPlainHTTP(s.PortalAPIBase) && hasHTTPSOrigin(s.PortalOrigins) {
-		return fmt.Errorf(
-			"portal_api_base is plain HTTP while portal_origins has an HTTPS " +
-				"origin: browsers block that combination, so set an HTTPS API " +
-				"address (see --web-tls-cert)",
-		)
+	if w := SettingsWarning(s); w != "" {
+		m.logger.Info("user settings look wrong", "warning", w)
 	}
 
 	// Store the whole struct.  Rebuilding it field by field silently drops
@@ -1254,6 +1245,32 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 }
 
 // isPlainHTTP reports whether raw is an http:// URL.
+// SettingsWarning describes a settings combination that is almost certainly a
+// deployment mistake, or returns an empty string when there is nothing to say.
+//
+// It is a warning and not an error on purpose.  A plain HTTP API address next
+// to an HTTPS origin does break the browser-direct deployment: the request is
+// blocked as mixed content, and the cross-origin session cookie is dropped
+// because SameSite=None requires Secure.  But it is harmless when the browser
+// talks to a same-origin back-end instead -- the PHP back-end that ships in
+// the portal package, or an nginx proxy -- because then the browser never uses
+// that address at all.  Refusing to store the settings made the portal
+// impossible to configure for exactly those deployments, which are the ones
+// that cannot put a certificate on the AGHub host.
+func SettingsWarning(s *Settings) (w string) {
+	if s == nil || !isPlainHTTP(s.PortalAPIBase) || !hasHTTPSOrigin(s.PortalOrigins) {
+		return ""
+	}
+
+	return "portal_api_base is plain HTTP while portal_origins has an HTTPS " +
+		"origin. If the browser calls the API directly this cannot work: the " +
+		"request is blocked as mixed content and the session cookie is dropped. " +
+		"It is harmless when the browser talks to a same-origin back-end " +
+		"instead - leave portal_api_base empty for that, or point it at a PHP " +
+		"or nginx layer in front of AGHub. To let the browser call AGHub " +
+		"directly, serve the API over HTTPS with --web-tls-cert."
+}
+
 func isPlainHTTP(raw string) (ok bool) {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(raw)), "http://")
 }
