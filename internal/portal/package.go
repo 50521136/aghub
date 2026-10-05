@@ -3,10 +3,17 @@ package portal
 import (
 	"archive/zip"
 	"bytes"
+	"embed"
 	"fmt"
 	"io/fs"
 	"strings"
 )
+
+//go:embed phpfiles
+var phpFiles embed.FS
+
+// phpDir is where the PHP back-end lands inside the package.
+const phpDir = "php/"
 
 const (
 	// PackageFileName is the name of the generated deployment package.
@@ -64,6 +71,17 @@ func Package(apiBase string, origins []string) (b []byte, err error) {
 		return nil, fmt.Errorf("portal: packing %q: %w", PackageFileName, err)
 	}
 
+	// The PHP back-end goes in as well.  A site that has PHP but no reverse
+	// proxy can then serve the portal over http or https without touching the
+	// AGHub host at all: the browser only ever talks to PHP, and the PHP hop
+	// is not subject to the browser rules that break a plain HTTP API.
+	err = addPHPFiles(zw)
+	if err != nil {
+		_ = zw.Close()
+
+		return nil, fmt.Errorf("portal: packing the php back-end: %w", err)
+	}
+
 	err = writeZipFile(zw, readmeFileName, readme(apiBase, origins))
 	if err != nil {
 		_ = zw.Close()
@@ -80,6 +98,31 @@ func Package(apiBase string, origins []string) (b []byte, err error) {
 }
 
 // writeZipFile adds a single file to the archive.
+// addPHPFiles puts the PHP back-end into the package under php/.
+func addPHPFiles(zw *zip.Writer) (err error) {
+	sub, err := fs.Sub(phpFiles, "phpfiles")
+	if err != nil {
+		return fmt.Errorf("getting the phpfiles subdirectory: %w", err)
+	}
+
+	return fs.WalkDir(sub, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		data, rerr := fs.ReadFile(sub, path)
+		if rerr != nil {
+			return rerr
+		}
+
+		return writeZipFile(zw, phpDir+path, data)
+	})
+}
+
 func writeZipFile(zw *zip.Writer, name string, data []byte) (err error) {
 	w, err := zw.Create(name)
 	if err != nil {
@@ -142,7 +185,7 @@ func readme(apiBase string, origins []string) (b []byte) {
 
 	sb.WriteString("AGHub 门户前端部署包\n")
 	sb.WriteString("====================\n\n")
-	sb.WriteString("这个目录就是完整的门户前端，纯静态文件，不需要 Node、PHP 或任何后端。\n\n")
+	sb.WriteString("这个目录是完整的门户前端（纯静态），另外带一个可选的 PHP 后端。\n\n")
 
 	sb.WriteString("先读这一段：浏览器发出的明文 HTTP 请求会被拦掉\n")
 	sb.WriteString("------------------------------------------------\n\n")
@@ -165,6 +208,19 @@ func readme(apiBase string, origins []string) (b []byte) {
 	sb.WriteString("    }\n\n")
 	sb.WriteString("X-Forwarded-Proto 这一行不能省：AGHub 靠它判断浏览器那一侧是 https，\n")
 	sb.WriteString("少了它下发的 cookie 不带 Secure。\n\n")
+
+	sb.WriteString("第二种：用包里的 PHP（站点有 PHP、没有反向代理）\n")
+	sb.WriteString("--------------------------------------------------\n\n")
+	sb.WriteString("把 php/ 里的三个文件和本目录的 index.html、config.js 放在站点的\n")
+	sb.WriteString("portal/ 目录下，改一下 php/config.sample.php 里的 aghub_url，\n")
+	sb.WriteString("再复制成 config.php：\n\n")
+	sb.WriteString("    <站点目录>/portal/index.php        php/index.php\n")
+	sb.WriteString("    <站点目录>/portal/config.php       php/config.sample.php 复制而来\n")
+	sb.WriteString("    <站点目录>/portal/index.html       本目录的 index.html\n")
+	sb.WriteString("    <站点目录>/portal/config.js        本目录的 config.js（apiBase 留空）\n\n")
+	sb.WriteString("浏览器只跟 PHP 说话（同源），PHP 再去调 AGHub。这一跳是服务端到\n")
+	sb.WriteString("服务端的，不受浏览器策略约束，所以 AGHub 那边 http 还是 https 都行，\n")
+	sb.WriteString("也不用配「门户来源」。nginx 和 Apache 的配置见 php/README.md。\n\n")
 
 	sb.WriteString("备选：让浏览器直接访问 AGHub\n")
 	sb.WriteString("------------------------------\n\n")

@@ -73,6 +73,35 @@ func TestPackageWithoutAnAddress(t *testing.T) {
 	assert.Contains(t, files[readmeFileName], "没有配置")
 }
 
+// TestPackageShipsThePHPBackEnd checks that the PHP back-end travels with the
+// front-end.
+//
+// A site that has PHP but no reverse proxy can then serve the portal without
+// touching the AGHub host: the browser talks to PHP, and the PHP-to-AGHub hop
+// is server side, so a plain HTTP AGHub keeps working.  Shipping it in the
+// package is the difference between "read the docs and go find a script" and
+// "unzip and it works".
+func TestPackageShipsThePHPBackEnd(t *testing.T) {
+	b, err := Package("https://api.example.com", nil)
+	require.NoError(t, err)
+
+	files := filesOf(t, b)
+
+	require.Contains(t, files, "php/index.php")
+	require.Contains(t, files, "php/config.sample.php")
+	require.Contains(t, files, "php/README.md")
+
+	// The proxy has to be a real proxy: forward the scheme, and drop Origin so
+	// that AGHub does not treat the call as cross-origin and hand out a cookie
+	// the browser will refuse.
+	php := files["php/index.php"]
+	assert.Contains(t, php, "X-Forwarded-Proto")
+	assert.Contains(t, php, "SameSite=None")
+	// PHP 7.4 has no str_starts_with; the note inside the file mentions it, so
+	// look for a call rather than the bare name.
+	assert.NotContains(t, php, "str_starts_with(", "PHP 7.4 has no str_starts_with")
+}
+
 // TestReadmeLeadsWithTheProxy checks that the note offers the same-origin
 // reverse proxy before it offers TLS.
 //
