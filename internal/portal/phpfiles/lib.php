@@ -760,13 +760,99 @@ function icon(string $name, string $class = ''): string
 }
 
 /**
- * linechart 用内联 SVG 画折线图，不需要 canvas，也不需要外部图表库。
+ * avatar_html 画一个头像圆。
  *
- * 柱状图看总量，折线图看趋势 —— 近 7 天这种序列，折线更能看出是涨是跌。
- *
- * $values 形如 array(标签 => 数值)，标签用于横轴和悬停提示。
+ * 没设头像就退回名字首字，底色由标识推导 —— 同一个人每次刷新都是同一个颜色，
+ * 不会跳来跳去。
  */
-function linechart(array $values, int $height = 120): string
+function avatar_html(string $avatar, string $name, string $id, string $cls = 'rk-ava'): string
+{
+    $seed = $id !== '' ? $id : $name;
+    $hue = $seed !== '' ? (crc32($seed) % 360) : 210;
+
+    $bg = 'hsl(' . $hue . ' 60% 92%)';
+    $fg = 'hsl(' . $hue . ' 55% 32%)';
+
+    $face = $avatar !== '' ? $avatar : mb_substr($name, 0, 1, 'UTF-8');
+    if ($face === '') {
+        $face = '?';
+    }
+
+    return '<span class="' . h($cls) . '" style="background:' . $bg . ';color:' . $fg . '">'
+        . h($face) . '</span>';
+}
+
+/**
+ * avatar_safe 把接口给的头像串收一下。
+ *
+ * 存下来的是用户选的字符串，渲染前必须过一遍：长度封顶，控制字符和尖括号
+ * 一律不要。
+ */
+function avatar_safe($v): string
+{
+    $v = is_string($v) ? trim($v) : '';
+
+    if ($v === '' || mb_strlen($v, 'UTF-8') > 4) {
+        return '';
+    }
+
+    if (preg_match('/[<>\x00-\x1f]/u', $v)) {
+        return '';
+    }
+
+    return $v;
+}
+
+/**
+ * num_short 把数字压成图表里放得下的短写。
+ *
+ * 点上的数值必须一眼读完，所以过万就用「万」，别把 12,105 六个字符塞进去。
+ */
+function num_short(int $n): string
+{
+    if ($n >= 100000000) {
+        return rtrim(rtrim(number_format($n / 100000000, 1), '0'), '.') . '亿';
+    }
+
+    if ($n >= 10000) {
+        // 上百万就别留小数了，不然 7103.9万 这种七个字符塞不进点间距。
+        if ($n >= 1000000) {
+            return (string) (int) round($n / 10000) . '万';
+        }
+
+        return rtrim(rtrim(number_format($n / 10000, 1), '0'), '.') . '万';
+    }
+
+    return (string) $n;
+}
+
+/**
+ * chart_color 按数值给点上色：越低越冷，越高越暖。
+ *
+ * 光看折线的高低，几个点挤在一起时分不出谁高谁低；给点本身染色，一眼就能
+ * 看出哪几天是峰值。色相从 210（蓝）走到 20（橙）。
+ */
+function chart_color(int $v, int $peak, bool $for_text = false): string
+{
+    $t = $peak > 0 ? min(1, max(0, $v / $peak)) : 0;
+    $hue = 210 - (int) round($t * 190);
+
+    // 文字用的色要更深，浅色字压在浅底上读不清。
+    return $for_text
+        ? 'hsl(' . $hue . ' 68% 34%)'
+        : 'hsl(' . $hue . ' 76% 47%)';
+}
+
+/**
+ * linechart 画近 7 天的用量折线。
+ *
+ * 每个点上方标出具体数值、下方标出日期，两者都画在 SVG 里 —— 放 HTML 里就得
+ * 靠百分比对齐，稍微一改宽度就错位。
+ *
+ * 视图不做 preserveAspectRatio="none" 拉伸：那样曲线能铺满整个宽度，但文字会
+ * 被横向拉扁。改成等比缩放，宽度撑满、高度跟着走。
+ */
+function linechart(array $values, int $height = 172): string
 {
     $n = count($values);
     if ($n === 0) {
@@ -779,16 +865,18 @@ function linechart(array $values, int $height = 120): string
     $peak = max($vals);
     $peak = $peak > 0 ? $peak : 1;
 
-    // 视图坐标系：留出上下边距，曲线不贴边。
     $w = 320;
-    $padT = 14;
-    $padB = 14;
+    $padL = 22;
+    $padR = 22;
+    $padT = 28;   // 留给点上的数值
+    $padB = 24;   // 留给点下的日期
+    $plotW = $w - $padL - $padR;
     $plotH = $height - $padT - $padB;
-    $step = $n > 1 ? ($w / ($n - 1)) : 0;
+    $step = $n > 1 ? ($plotW / ($n - 1)) : 0;
 
     $pts = array();
     foreach ($vals as $i => $v) {
-        $x = $n > 1 ? $i * $step : $w / 2;
+        $x = $n > 1 ? $padL + $i * $step : $w / 2;
         $y = $padT + $plotH - ((int) $v * $plotH / $peak);
         $pts[] = array(round($x, 2), round($y, 2));
     }
@@ -798,22 +886,22 @@ function linechart(array $values, int $height = 120): string
         $line[] = $pt[0] . ',' . $pt[1];
     }
 
-    // 面积路径：从曲线两端垂直落到底部再闭合。
-    $area = 'M' . $pts[0][0] . ',' . ($padT + $plotH) . ' L'
-        . implode(' L', $line) . ' L' . $pts[$n - 1][0] . ',' . ($padT + $plotH) . ' Z';
+    $base = $padT + $plotH;
+    $area = 'M' . $pts[0][0] . ',' . $base . ' L'
+        . implode(' L', $line) . ' L' . $pts[$n - 1][0] . ',' . $base . ' Z';
 
-    $out = '<svg class="lc" viewBox="0 0 ' . $w . ' ' . $height . '" preserveAspectRatio="none"'
+    $out = '<svg class="lc" viewBox="0 0 ' . $w . ' ' . $height . '"'
         . ' role="img" aria-label="近 7 天用量趋势">';
 
     $out .= '<defs><linearGradient id="lcFill" x1="0" y1="0" x2="0" y2="1">'
-        . '<stop offset="0%" stop-color="#2563eb" stop-opacity="0.22"/>'
+        . '<stop offset="0%" stop-color="#2563eb" stop-opacity="0.20"/>'
         . '<stop offset="100%" stop-color="#2563eb" stop-opacity="0.02"/>'
         . '</linearGradient></defs>';
 
     // 三条参考线，让高度有个参照。
     for ($g = 1; $g <= 3; $g++) {
         $gy = round($padT + $plotH * $g / 4, 2);
-        $out .= '<line x1="0" y1="' . $gy . '" x2="' . $w . '" y2="' . $gy . '"'
+        $out .= '<line x1="' . $padL . '" y1="' . $gy . '" x2="' . ($w - $padR) . '" y2="' . $gy . '"'
             . ' class="lc-grid"/>';
     }
 
@@ -821,9 +909,28 @@ function linechart(array $values, int $height = 120): string
     $out .= '<polyline points="' . implode(' ', $line) . '" class="lc-line"/>';
 
     foreach ($pts as $i => $pt) {
-        $title = h((string) $labels[$i] . '：' . num_h($vals[$i]) . ' 次');
-        $out .= '<circle cx="' . $pt[0] . '" cy="' . $pt[1] . '" r="3.4" class="lc-dot">'
-            . '<title>' . $title . '</title></circle>';
+        $v = (int) $vals[$i];
+        $col = chart_color($v, $peak);
+        $txt = chart_color($v, $peak, true);
+
+        // 数值：点在下面时标上方，靠近顶部时标下方，免得顶出画布。
+        $above = $pt[1] > ($padT + 11);
+        $vy = $above ? $pt[1] - 9 : $pt[1] + 15;
+
+        $out .= '<circle cx="' . $pt[0] . '" cy="' . $pt[1] . '" r="3.8"'
+            . ' fill="' . $col . '" stroke="#fff" stroke-width="1.4" class="lc-dot">'
+            . '<title>' . h((string) $labels[$i] . '：' . num_h($v) . ' 次') . '</title></circle>';
+
+        $out .= '<text x="' . $pt[0] . '" y="' . round($vy, 2) . '" class="lc-val"'
+            . ' fill="' . $txt . '">' . h(num_short($v)) . '</text>';
+
+        // 日期压掉年份，只留 MM-DD。
+        $day = (string) $labels[$i];
+        if (strlen($day) >= 10) {
+            $day = substr($day, 5);
+        }
+        $out .= '<text x="' . $pt[0] . '" y="' . ($height - 8) . '" class="lc-day">'
+            . h($day) . '</text>';
     }
 
     $out .= '</svg>';

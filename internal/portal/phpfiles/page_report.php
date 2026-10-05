@@ -31,31 +31,58 @@ foreach ($history as $p) {
 }
 $points = array_slice($points, -7, 7, true);
 ?>
+<?php
+// 近 24 小时的全站数据。统计模块没开时这几个键会缺席，那就整块不显示 ——
+// 显示一排 0 比不显示更糟，看起来像「什么都没拦」。
+$q24 = isset($public['queries_24h']) ? (int) $public['queries_24h'] : -1;
+$b24 = isset($public['blocked_24h']) ? (int) $public['blocked_24h'] : 0;
+$p24 = isset($public['passed_24h']) ? (int) $public['passed_24h'] : 0;
+$rate = $q24 > 0 ? (int) round($b24 * 100 / $q24) : 0;
+?>
+
 <section class="hero">
-  <?php /* 起始文案中性：探测结果还没出来，不能先替用户说「已经拦下了」。 */ ?>
-  <h1 data-probe-head data-probe-when-seen="广告正在被拦下"><?= $logged ? '把设备接进来' : '加密 DNS 战报' ?></h1>
+  <?php /* 状态放标题上面：先说「你这台设备怎么样了」，再给标题。
+           起始文案中性 —— 探测结果还没出来，不能先替用户说「已经拦下了」。 */ ?>
+  <?php if ($logged): ?>
+    <div class="hero-state">
+      <?php if ($probe_label !== ''): ?>
+        <span class="pill pill-wait" data-probe-pill data-probe-label="<?= h($probe_label) ?>">
+          <?= icon('info') ?><span data-probe-text>检测中</span>
+        </span>
+        <img class="probe-img" src="https://<?= h($probe_label . '.' . $probe_host) ?>/p.png"
+             width="1" height="1" alt="">
+      <?php else: ?>
+        <span class="pill pill-idle"><?= icon('info') ?>未接入</span>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+
+  <h1 data-probe-head data-probe-when-seen="广告正在被拦下"><?= $logged ? '设备尚未接入' : '加密 DNS 战报' ?></h1>
   <p class="hero-sub">
-    <?php if ($connected): ?>
-      解析正在加密传输，广告已经拦下
-    <?php elseif ($logged): ?>
-      复制接入地址填进设备，回到本页就能看到战报
+    <?php if ($logged): ?>
+      配置完成后，回到本页即可看到 24 小时查询战报
     <?php else: ?>
       加密 DNS 解析，登录后看自己的用量和日志
     <?php endif; ?>
   </p>
 </section>
 
+<?php if ($q24 >= 0): ?>
 <section class="card stat-card">
-  <div class="stat-label">全站累计解析</div>
-  <div class="stat-big" title="<?= h(num_h($queries)) ?>"><?= h(num_h($queries)) ?></div>
-  <div class="stat-row">
-    <div class="stat-mini">
-      <span class="mk">过滤规则</span>
-      <span class="mv"><?= h(num_h($rules)) ?></span>
+  <div class="stat-label">全站解析总量 · 近 24 小时</div>
+  <div class="stat-big" title="<?= h(num_h($q24)) ?>"><?= h(num_h($q24)) ?></div>
+  <div class="stat-lines">
+    <div class="stat-line">
+      <span class="sl-k">已过滤广告</span>
+      <span class="sl-v"><?= h(num_h($b24)) ?> 次</span>
     </div>
-    <div class="stat-mini">
-      <span class="mk">订阅账号</span>
-      <span class="mv"><?= h(num_h($accounts)) ?></span>
+    <div class="stat-line">
+      <span class="sl-k">防误杀放行</span>
+      <span class="sl-v"><?= h(num_h($p24)) ?> 次</span>
+    </div>
+    <div class="stat-line">
+      <span class="sl-k">拦截率</span>
+      <span class="sl-v sl-rate"><?= (int) $rate ?>%</span>
     </div>
   </div>
   <div class="stat-foot">
@@ -71,6 +98,7 @@ $points = array_slice($points, -7, 7, true);
     </div>
   </div>
 </section>
+<?php endif; ?>
 
 <?php if ($logged && $points !== array()): ?>
 <section class="card">
@@ -79,11 +107,6 @@ $points = array_slice($points, -7, 7, true);
     <span class="card-note">峰值 <?= h(num_h(max($points))) ?> 次</span>
   </div>
   <?= linechart($points) ?>
-  <div class="spark-axis">
-    <?php foreach (array_keys($points) as $d): ?>
-      <span><?= h(substr((string) $d, 5)) ?></span>
-    <?php endforeach; ?>
-  </div>
   <div class="spark-foot">
     <span>近 7 天共 <strong><?= h(num_h(array_sum($points))) ?></strong> 次</span>
     <a class="link" href="<?= h(page_url('log')) ?>">查看日志</a>

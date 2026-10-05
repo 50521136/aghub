@@ -472,71 +472,111 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
 
 /* ------------------------------------------------------------------ 排行榜 */
 
-.rank-list { list-style: none; margin: 0; padding: 0; }
-
-.rank-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 11px 0; border-top: 1px solid var(--line);
+/* 排行榜：卡片式。
+   每张卡是一个人，名次和头像在左，名字和解析量在右，解析量做进度条，
+   下面跟拦截量和防误杀。竖向比列表费一点，但手机上一眼能看出谁拦得多。 */
+.rk-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
 }
 
-.rank-row:first-child { border-top: 0; }
-.rank-row.me { background: var(--blue-soft); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 10px; }
+.rk-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: #fff; border: 1px solid var(--line);
+  border-radius: 14px; padding: 11px 12px;
+}
 
-.rank-no {
-  flex: 0 0 auto; width: 26px; height: 26px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 8px;
-  font-size: 12.5px; font-weight: 700; color: var(--fg3);
-  background: #f1f4f9;
+.rk-item.me { border-color: var(--blue); background: var(--blue-soft); }
+
+.rk-no {
+  flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center;
+  font-size: 12px; font-weight: 700; color: var(--fg3);
+  background: #f1f5f9; border-radius: 7px;
   font-variant-numeric: tabular-nums;
 }
 
-/* 前三名给一点区分，但不做领奖台那一套。 */
-.rank-no.top { background: var(--blue); color: #fff; }
+.rk-no.top { background: var(--blue); color: #fff; }
 
-.rank-main {
-  flex: 1 1 auto; min-width: 0;
-  display: flex; flex-direction: column; gap: 5px;
+.rk-ava {
+  flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 600; line-height: 1;
 }
 
-.rank-name {
+.rk-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+
+.rk-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+
+.rk-name {
   font-size: 14px; font-weight: 600; color: var(--fg);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.rank-name em {
-  font-style: normal; font-size: 11px; font-weight: 700;
-  margin-left: 6px; padding: 1px 6px; border-radius: 999px;
-  background: var(--blue); color: #fff;
+.rk-name em {
+  font-style: normal; font-size: 10.5px; font-weight: 700;
+  color: #fff; background: var(--blue);
+  border-radius: 5px; padding: 1px 5px; margin-left: 5px;
+  vertical-align: 1px;
 }
 
-/* 占比条：一眼看出跟榜首差多少。 */
-.rank-bar {
-  display: block; height: 5px; border-radius: 999px;
-  background: #eef2f8; overflow: hidden;
+.rk-total {
+  flex: 0 0 auto; font-size: 15px; font-weight: 700; color: var(--fg);
+  font-variant-numeric: tabular-nums;
 }
 
-.rank-bar i {
-  display: block; height: 100%; border-radius: 999px;
-  background: linear-gradient(90deg, #7fb0f0 0%, var(--blue) 100%);
+.rk-total small { font-size: 11px; font-weight: 500; color: var(--fg3); margin-left: 3px; }
+
+.rk-bar { display: block; height: 5px; border-radius: 3px; background: #eef2f7; overflow: hidden; }
+
+.rk-bar i {
+  display: block; height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, #60a5fa 0%, #2563eb 100%);
 }
 
-.rank-row.me .rank-bar i { background: linear-gradient(90deg, #34c38f 0%, #17a673 100%); }
+.rk-item.me .rk-bar i { background: linear-gradient(90deg, #34c38f 0%, #17a673 100%); }
 
-.rank-num {
-  flex: 0 0 auto; font-size: 14px; font-weight: 700;
-  color: var(--blue-mid); font-variant-numeric: tabular-nums;
+.rk-stats { display: flex; gap: 12px; font-size: 11.5px; color: var(--fg3); }
+
+.rk-stats b {
+  color: var(--fg2); font-weight: 700;
+  font-variant-numeric: tabular-nums; margin-right: 3px;
 }
 
-.rank-card .card-head { margin-bottom: 6px; }
+/* 头像选择器。预设由 AGHub 给，这里只管排布。 */
+.ava-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+}
 
-/* ---------------------------------------------------------------- 折线图 */
+.ava-pick {
+  aspect-ratio: 1 / 1; padding: 0;
+  border: 1.5px solid var(--line); background: #fff;
+  border-radius: 12px; font-size: 20px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, transform .12s;
+}
 
-/* viewBox 拉伸铺满宽度，高度由 CSS 固定，所以 preserveAspectRatio 用 none。 */
+.ava-pick:active { transform: scale(.94); }
+
+.ava-pick.on { border-color: var(--blue); background: var(--blue-soft); }
+
 .lc {
-  display: block; width: 100%; height: 120px;
-  margin: 4px 0 0;
+  display: block; width: 100%; height: auto;
+  margin: 6px 0 0;
   overflow: visible;
+}
+
+/* 点上的数值和点下的日期。都在 SVG 里，跟着坐标走，不会错位。 */
+.lc-val {
+  font-size: 8.6px; font-weight: 700;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-day {
+  font-size: 8.6px; fill: var(--fg3);
+  text-anchor: middle;
 }
 
 .lc-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
@@ -749,3 +789,38 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
   color: var(--fg2);
   border-color: #dbe3ef;
 }
+
+/* 全站数据那三行：已过滤广告 / 防误杀放行 / 拦截率。 */
+.stat-lines {
+  display: flex; flex-direction: column; gap: 7px;
+  margin: 14px 0 2px;
+}
+
+.stat-line { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px; }
+
+.sl-k { font-size: 13px; color: var(--fg2); }
+
+.sl-v { font-size: 14px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+
+.sl-rate { color: var(--blue); }
+
+/* 接入状态挪到战报标题上方了 —— 先说「你这台设备怎么样了」，再给标题。 */
+.hero-state { display: flex; justify-content: center; margin-bottom: 10px; }
+
+/* 顶栏右上角的账号入口。 */
+.topbar-user {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--fg2); text-decoration: none;
+  max-width: 46%; min-width: 0;
+}
+
+.topbar-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.topbar-ava {
+  flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; line-height: 1;
+}
+
+.hint-ok { color: #17a673; }
+.hint-bad { color: #dc2626; }

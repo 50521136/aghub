@@ -17,7 +17,7 @@ $nav = nav_items();
 
 // 除了四个标签页，还有两个挂在它们下面的页面：日志在「我的」里，注册在登录流程里。
 // 这两个不在导航表里，所以不能拿导航表当白名单。
-$extra = array('log' => 'me', 'register' => 'me', 'ios' => 'me', 'probe' => 'me');
+$extra = array('log' => 'me', 'register' => 'me', 'ios' => 'me', 'probe' => 'me', 'avatar' => 'me');
 
 $page = isset($_GET['p']) ? (string) $_GET['p'] : 'report';
 if (!isset($nav[$page]) && !isset($extra[$page])) {
@@ -167,6 +167,10 @@ if ($logged) {
 if ($logged && $page === 'log') {
     $want['log:' . md5($log_q)] = array(array('GET', $log_q, null, $session), 30);
 }
+if ($logged && $page === 'me') {
+    // 预设列表由 AGHub 单一来源提供，PHP 不自己抄一份。
+    $want['avatars'] = array(array('GET', '/portal/api/avatar'), 300);
+}
 if ($page === 'ranking') {
     $want['ranking'] = array(array('GET', '/portal/api/ranking?limit=30'), 60);
 }
@@ -211,6 +215,19 @@ if ($logged && $page === 'log' && isset($got['log:' . md5($log_q)])) {
     }
 }
 
+$ava_r = isset($got['avatars']) ? $got['avatars']['v'] : array();
+$avatars = array();
+if (is_array($ava_r) && !empty($ava_r['ok'])) {
+    $presets = isset($ava_r['data']['presets']) && is_array($ava_r['data']['presets'])
+        ? $ava_r['data']['presets'] : array();
+    foreach ($presets as $a) {
+        $a = avatar_safe($a);
+        if ($a !== '') {
+            $avatars[] = $a;
+        }
+    }
+}
+
 $rank_r = isset($got['ranking']) ? $got['ranking']['v'] : array();
 $entries = array();
 if (is_array($rank_r) && !empty($rank_r['ok'])) {
@@ -230,6 +247,7 @@ if ($logged && $probe_host !== '') {
 $domain = isset($public['domain']) ? (string) $public['domain'] : '';
 $ids = isset($user['ids']) && is_array($user['ids']) ? $user['ids'] : array();
 $primary_id = $ids !== array() ? (string) $ids[0] : '';
+$my_avatar = avatar_safe($user['avatar'] ?? '');
 $title_hint = (string) cfg('title', 'DNS 服务');
 
 // 当前访问者是否已经通过加密 DNS 接进来了：拿他的地址和账号里记的比。
@@ -251,6 +269,40 @@ if ($page === 'probe') {
     $r = probe_status(isset($_GET['t']) ? (string) $_GET['t'] : '', $session);
 
     echo json_encode($r, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// 换头像。预设列表在 AGHub 那边，这里只做转发 —— 合法性也由它判定，
+// 免得两边各有一份白名单。
+if ($page === 'avatar') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+
+    if (!$logged) {
+        http_response_code(401);
+        echo json_encode(array('ok' => false, 'error' => '请先登录'), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if (!csrf_ok()) {
+        http_response_code(400);
+        echo json_encode(array('ok' => false, 'error' => '页面已过期，刷新后重试'), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $want = avatar_safe(isset($_POST['avatar']) ? (string) $_POST['avatar'] : '');
+
+    $r = aghub('POST', '/portal/api/avatar', array('avatar' => $want), $session);
+    if (!is_array($r) || empty($r['ok'])) {
+        http_response_code(502);
+        echo json_encode(
+            array('ok' => false, 'error' => is_array($r) ? (string) $r['error'] : '服务暂时不可用'),
+            JSON_UNESCAPED_UNICODE
+        );
+        exit;
+    }
+
+    echo json_encode(array('ok' => true, 'avatar' => $want), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -298,22 +350,11 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
     </div>
     <?php if (!$logged): ?>
       <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录</a>
-    <?php elseif ($probe_label !== ''): ?>
-      <?php /* 这个状态只说一件事：本设备有没有在用我们。
-              账号里别的设备在不在用、同一个 WiFi 下的别的设备，都不算 ——
-              所以这里不看任何账号级的计数，等探测结果出来再落定。 */ ?>
-      <span
-        class="pill pill-wait"
-        data-probe-pill
-        data-probe-label="<?= h($probe_label) ?>"
-      ><?= icon('info') ?><span data-probe-text>检测中</span></span>
-      <img
-        class="probe-img"
-        src="https://<?= h($probe_label . '.' . $probe_host) ?>/p.png"
-        width="1" height="1" alt=""
-      >
     <?php else: ?>
-      <span class="pill pill-idle"><?= icon('info') ?>未接入</span>
+      <a class="topbar-user" href="<?= h(page_url('me')) ?>">
+        <?= avatar_html($my_avatar, (string) ($user['name'] ?? ''), $primary_id, 'topbar-ava') ?>
+        <span><?= h((string) ($user['name'] ?? '')) ?></span>
+      </a>
     <?php endif; ?>
   </header>
 
@@ -404,6 +445,65 @@ function fallback(text, done) {
 }
 </script>
 <script>
+/* 换头像。
+ *
+ * 点一下就把选的图案 POST 给服务端，成功后就地更新头像圆和选中态 —— 不整页
+ * 刷新，否则「我的」上那一堆卡片会闪一下再回来。
+ */
+(function () {
+  var grid = document.querySelector('[data-ava-grid]');
+  if (!grid) { return; }
+
+  var msg = document.querySelector('[data-ava-msg]');
+  var head = document.querySelector('[data-me-ava]');
+  var busy = false;
+
+  function say(text, bad) {
+    if (!msg) { return; }
+    msg.textContent = text;
+    msg.hidden = !text;
+    msg.className = bad ? 'hint hint-bad' : 'hint hint-ok';
+  }
+
+  grid.addEventListener('click', function (ev) {
+    var btn = ev.target.closest ? ev.target.closest('.ava-pick') : null;
+    if (!btn || busy) { return; }
+
+    var val = btn.getAttribute('data-ava') || '';
+    busy = true;
+    say('', false);
+
+    fetch(location.pathname + '?p=avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'csrf=' + encodeURIComponent(grid.getAttribute('data-csrf') || '')
+          + '&avatar=' + encodeURIComponent(val),
+      credentials: 'same-origin'
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        busy = false;
+
+        if (!d || !d.ok) {
+          say((d && d.error) || '换头像失败', true);
+          return;
+        }
+
+        var picks = grid.querySelectorAll('.ava-pick');
+        for (var i = 0; i < picks.length; i++) {
+          picks[i].classList.toggle('on', picks[i].getAttribute('data-ava') === val);
+        }
+
+        if (head) { head.textContent = val; }
+        say('已换成这个头像', false);
+      })
+      .catch(function () {
+        busy = false;
+        say('网络不通，稍后再试', true);
+      });
+  });
+})();
+
 /* 探测的重试阶梯。
  *
  * 浏览器解析随机名字是「发出探测」，这里回头问服务端有没有收到。分几次问是

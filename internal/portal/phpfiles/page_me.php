@@ -27,7 +27,7 @@ $dot = dot_host($primary_id, $domain);
 $client = isset($user['client']) && is_array($user['client']) ? $user['client'] : array();
 ?>
 <section class="me-head">
-  <div class="me-avatar"><?= h(mb_substr((string) ($user['name'] ?? '?'), 0, 1, 'UTF-8')) ?></div>
+  <div class="me-avatar" data-me-ava><?= h($my_avatar !== '' ? $my_avatar : mb_substr((string) ($user['name'] ?? '?'), 0, 1, 'UTF-8')) ?></div>
   <div class="me-who">
     <div class="me-name"><?= h((string) ($user['name'] ?? '')) ?></div>
     <div class="me-meta">
@@ -36,6 +36,22 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
     </div>
   </div>
 </section>
+
+<?php if ($avatars !== array()): ?>
+<section class="card">
+  <div class="card-head">
+    <h2>头像</h2>
+    <span class="card-note">点一下就换</span>
+  </div>
+  <div class="ava-grid" data-ava-grid data-csrf="<?= h(csrf_token()) ?>">
+    <?php foreach ($avatars as $a): ?>
+      <button type="button" class="ava-pick<?= $a === $my_avatar ? ' on' : '' ?>"
+              data-ava="<?= h($a) ?>"><?= h($a) ?></button>
+    <?php endforeach; ?>
+  </div>
+  <p class="hint" data-ava-msg hidden></p>
+</section>
+<?php endif; ?>
 
 <section class="card">
   <div class="card-head">
