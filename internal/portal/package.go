@@ -131,6 +131,12 @@ func quoteJS(s string) (q string) {
 }
 
 // readme renders the deployment note.
+//
+// The note leads with the same-origin reverse proxy, because that is the setup
+// most deployments already have: a server-side hop is not subject to the
+// browser rules that make a cross-origin portal fail, so the AGHub host can
+// keep serving plain HTTP.  Direct browser access to the API is documented
+// second, as the alternative that does need TLS.
 func readme(apiBase string, origins []string) (b []byte) {
 	var sb strings.Builder
 
@@ -138,45 +144,65 @@ func readme(apiBase string, origins []string) (b []byte) {
 	sb.WriteString("====================\n\n")
 	sb.WriteString("这个目录就是完整的门户前端，纯静态文件，不需要 Node、PHP 或任何后端。\n\n")
 
-	sb.WriteString("部署步骤\n--------\n\n")
-	sb.WriteString("1. 把这里的文件原样上传到你的网站目录（根目录或任意子目录都可以）。\n\n")
+	sb.WriteString("先读这一段：浏览器发出的明文 HTTP 请求会被拦掉\n")
+	sb.WriteString("------------------------------------------------\n\n")
+	sb.WriteString("页面用 https 提供、而接口是 http 时，浏览器会按「混合内容」直接拦掉\n")
+	sb.WriteString("这个请求；跨域时还多一道：会话 cookie 带 SameSite=None，明文 HTTP 下\n")
+	sb.WriteString("会被静默丢弃，表现是「登录成功、刷新掉线」。\n\n")
+	sb.WriteString("这两条都只针对**浏览器发出**的请求。服务端到服务端的明文 HTTP 不受\n")
+	sb.WriteString("任何影响，所以只要让浏览器只跟自己同源的后端说话，国内的 AGHub\n")
+	sb.WriteString("可以继续跑明文 HTTP，不用动。\n\n")
+
+	sb.WriteString("推荐：同源反代（AGHub 不用改）\n")
+	sb.WriteString("------------------------------\n\n")
+	sb.WriteString("在前端服务器上把 /portal/ 反代到 AGHub：\n\n")
+	sb.WriteString("    location /portal/ {\n")
+	sb.WriteString("        proxy_pass http://<AGHub 地址>:3000;\n")
+	sb.WriteString("        proxy_set_header Host              $host;\n")
+	sb.WriteString("        proxy_set_header X-Real-IP         $remote_addr;\n")
+	sb.WriteString("        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;\n")
+	sb.WriteString("        proxy_set_header X-Forwarded-Proto https;\n")
+	sb.WriteString("    }\n\n")
+	sb.WriteString("X-Forwarded-Proto 这一行不能省：AGHub 靠它判断浏览器那一侧是 https，\n")
+	sb.WriteString("少了它下发的 cookie 不带 Secure。\n\n")
+
+	sb.WriteString("备选：让浏览器直接访问 AGHub\n")
+	sb.WriteString("------------------------------\n\n")
+	sb.WriteString("这时 API 必须是 HTTPS，否则上面两种失败必然出现。AGHub 自带 HTTPS，\n")
+	sb.WriteString("不需要额外的反向代理：\n\n")
+	sb.WriteString("    aghub -w /opt/aghub --web-addr 0.0.0.0:3000 \\\n")
+	sb.WriteString("      --web-tls-cert /path/fullchain.pem \\\n")
+	sb.WriteString("      --web-tls-key  /path/privkey.pem\n\n")
+	sb.WriteString("证书和私钥必须同时给，只给一个 AGHub 会拒绝启动。\n\n")
+
+	sb.WriteString("本包的配置\n")
+	sb.WriteString("----------\n\n")
 
 	if apiBase == "" {
-		sb.WriteString("2. config.js 里的 apiBase 是空的，表示前端与 API 同源。\n")
-		sb.WriteString("   如果你要把它部署到别的域名，请回到 AGHub 管理端的「门户部署」\n")
-		sb.WriteString("   里填上 API 地址，然后重新下载这个包。\n\n")
+		sb.WriteString("config.js 里的 apiBase 是空的，表示前端与 API 同源 —— 这正是上面\n")
+		sb.WriteString("推荐的用法，配合反代即可。只有在你选择「浏览器直接访问 AGHub」时\n")
+		sb.WriteString("才需要回到管理端的「门户部署」填上 API 地址并重新下载这个包。\n\n")
 	} else {
-		sb.WriteString("2. config.js 里的 apiBase 已经指向：\n")
-		sb.WriteString("     " + apiBase + "\n\n")
+		sb.WriteString("config.js 里的 apiBase 已经指向：\n")
+		sb.WriteString("    " + apiBase + "\n")
+		sb.WriteString("这属于「浏览器直接访问 AGHub」，该地址必须是 https，且下面的来源\n")
+		sb.WriteString("必须匹配。\n\n")
 	}
 
 	if len(origins) == 0 {
-		sb.WriteString("3. 注意：AGHub 里还没有配置「门户来源」，所以 API 只接受来自\n")
-		sb.WriteString("   AGHub 自带页面的请求。请把下面这个页面的来源填进\n")
-		sb.WriteString("   管理端「设置 → 门户来源」，否则浏览器会拦下跨域请求：\n")
-		sb.WriteString("     https://你的前端域名\n\n")
+		sb.WriteString("「门户来源」没有配置。同源部署（反代）不需要它；如果你要让浏览器\n")
+		sb.WriteString("跨域直连 AGHub，请把本页面的来源填进管理端「设置 → 门户来源」：\n")
+		sb.WriteString("    https://你的前端域名\n\n")
 	} else {
-		sb.WriteString("3. AGHub 里配置的「门户来源」是：\n")
+		sb.WriteString("管理端配置的「门户来源」是：\n")
 		for _, o := range origins {
-			sb.WriteString("     " + o + "\n")
+			sb.WriteString("    " + o + "\n")
 		}
-		sb.WriteString("   这个页面必须部署在其中一个来源上，否则浏览器会拦下跨域请求。\n\n")
+		sb.WriteString("跨域直连时页面必须部署在其中一个来源上，否则浏览器会拦下请求。\n")
+		sb.WriteString("同源部署（反代）用不到这个配置。\n\n")
 	}
 
-	sb.WriteString("4. 必须用 HTTPS 提供这个页面，API 也必须是 HTTPS。跨域登录用的\n")
-	sb.WriteString("   cookie 带 SameSite=None，浏览器在非 HTTPS 下会直接丢弃它；\n")
-	sb.WriteString("   而 HTTPS 页面又无法请求明文 HTTP 的接口（混合内容会被拦掉）。\n")
-	sb.WriteString("   两者都表现为\"登录没反应\"，前端页面会显示一条说明告诉你具体是哪一种。\n\n")
-
-	sb.WriteString("   AGHub 自带 HTTPS，不需要额外的反向代理：\n")
-	sb.WriteString("     aghub -w /opt/aghub --web-addr 0.0.0.0:3000 \\\n")
-	sb.WriteString("       --web-tls-cert /path/fullchain.pem \\\n")
-	sb.WriteString("       --web-tls-key  /path/privkey.pem\n")
-	sb.WriteString("   证书和私钥必须同时给，只给一个 AGHub 会拒绝启动。\n")
-	sb.WriteString("   用 nginx 反代也可以，但必须设置 X-Forwarded-Proto: https，\n")
-	sb.WriteString("   否则 AGHub 会以为自己在明文 HTTP 上，cookie 同样会被丢弃。\n\n")
-
-	sb.WriteString("5. 页面本身没有任何配置项，改地址请改 config.js 里的 apiBase。\n")
+	sb.WriteString("页面本身没有任何配置项，改地址请改 config.js 里的 apiBase。\n")
 
 	return []byte(sb.String())
 }

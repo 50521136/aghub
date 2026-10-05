@@ -847,7 +847,10 @@ function describeFailure() {
 
   if (API_BASE && pageProto === "https" && apiProto === "http") {
     return "接口地址是明文 http，而本页是 https，浏览器会直接拦掉这个请求"
-      + "（混合内容）。请把 API 换成 https 地址——把前端改成 http 没有用。";
+      + "（混合内容）。两种解法：① 在本页所在的服务器上把 /portal/ 反代到"
+      + " AGHub，浏览器就只跟自己同源的后端说话，AGHub 那边不用改；"
+      + "② 给 AGHub 加 --web-tls-cert / --web-tls-key，让接口自己走 https。"
+      + "把前端改成 http 没有用：跨域的会话 cookie 带 Secure，明文下会被丢掉。";
   }
 
   if (!API_BASE) {
@@ -860,7 +863,9 @@ function describeFailure() {
     + "② 把本页来源 " + location.origin + " 加进管理端的「门户来源」，"
     + "否则浏览器会拦下跨域请求；"
     + "③ 接口用 https 时证书必须受浏览器信任。"
-    + "具体原因看浏览器控制台。";
+      + "具体原因看浏览器控制台。"
+      + "另外，跨域直连要求 API 走 https；如果你在本页所在的服务器上把"
+      + " /portal/ 反代到 AGHub，就变成同源，这些问题都不会出现。";
 }
 
 function showNetAlert(msg) {
