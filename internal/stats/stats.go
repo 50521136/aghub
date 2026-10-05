@@ -84,6 +84,19 @@ type Config struct {
 	Enabled bool
 }
 
+// Stats24h is the service-wide counters of the last 24 hours.
+type Stats24h struct {
+	// Queries is the number of DNS queries answered.
+	Queries uint64
+
+	// Blocked is the number of queries rejected by filtering.
+	Blocked uint64
+
+	// Allowed is the number of queries that matched a filtering rule but
+	// were allowed by the allow-list.
+	Allowed uint64
+}
+
 // Interface is the statistics interface to be used by other packages.
 type Interface interface {
 	// Start begins the statistics collecting.
@@ -103,6 +116,11 @@ type Interface interface {
 
 	// ShouldCount returns true if request for the host should be counted.
 	ShouldCount(host string, qType, qClass uint16, ids []string) bool
+
+	// GetStats24h returns the counters of the last 24 hours.  A collector
+	// that is disabled or has no data yet yields zeroes rather than an
+	// error, so a caller can render a page without a special case.
+	GetStats24h() (s Stats24h)
 }
 
 // StatsCtx collects the statistics and flushes it to the database.  Its default
@@ -300,6 +318,22 @@ func (s *StatsCtx) Update(e *Entry) {
 	}
 
 	s.curr.add(e)
+}
+
+// GetStats24h implements the [Interface] interface for *StatsCtx.
+func (s *StatsCtx) GetStats24h() (st Stats24h) {
+	const hours = 24
+
+	resp, ok := s.getData(hours)
+	if !ok || resp == nil {
+		return Stats24h{}
+	}
+
+	return Stats24h{
+		Queries: resp.NumDNSQueries,
+		Blocked: resp.NumBlockedFiltering,
+		Allowed: resp.NumAllowedAllowList,
+	}
 }
 
 // WriteDiskConfig implements the [Interface] interface for *StatsCtx.

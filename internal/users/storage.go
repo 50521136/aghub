@@ -86,6 +86,8 @@ func (m *Manager) load() (err error) {
 			us.total.Store(st.Total)
 			us.periodStart.Store(st.PeriodStart)
 			us.lastSeen.Store(st.LastSeen)
+			us.blocked.Store(st.Blocked)
+			us.passed.Store(st.Passed)
 			us.dayStart.Store(st.DayStart)
 			us.dayCount.Store(st.DayCount)
 
@@ -134,6 +136,8 @@ func (m *Manager) save() (err error) {
 				Total:       us.total.Load(),
 				PeriodStart: us.periodStart.Load(),
 				LastSeen:    us.lastSeen.Load(),
+				Blocked:     us.blocked.Load(),
+				Passed:      us.passed.Load(),
 				DayStart:    us.dayStart.Load(),
 				DayCount:    us.dayCount.Load(),
 			}
@@ -558,6 +562,7 @@ func (m *Manager) ImportUsers(users []*User) (n int, err error) {
 			ExpiresAt:    max(0, u.ExpiresAt),
 			CreatedAt:    createdAt,
 			Enabled:      u.Enabled,
+			Avatar:       validAvatarOrEmpty(u.Avatar),
 		}
 
 		usages[uid] = &usage{}

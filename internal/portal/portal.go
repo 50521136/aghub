@@ -141,6 +141,10 @@ type UserStore interface {
 
 	// SetPortalPassword sets the portal password of the user.
 	SetPortalPassword(uid, password string) (err error)
+
+	// SetAvatar sets the avatar preset of the user.  Only a value from
+	// [users.AvatarPresets] is accepted.
+	SetAvatar(uid, avatar string) (err error)
 }
 
 // FilteringStatus is the state of the filter engine.
@@ -166,6 +170,28 @@ type FilteringStatus struct {
 type FilteringSource interface {
 	// FilteringStatus returns the state of the filter engine.
 	FilteringStatus() (s FilteringStatus)
+}
+
+// StatsSummary is the service-wide query counters of the last 24 hours.
+type StatsSummary struct {
+	// Queries is the number of DNS queries answered.
+	Queries int64
+
+	// Blocked is the number of queries rejected by filtering.
+	Blocked int64
+
+	// Passed is the number of queries that matched a filtering rule but
+	// were allowed by the allow-list.
+	Passed int64
+}
+
+// StatsSource reports the service-wide query counters of the last 24 hours.
+//
+// It is a separate interface because statistics are optional: without them the
+// public page reports zeroes rather than an invented number.
+type StatsSource interface {
+	// Stats24h returns the counters.
+	Stats24h() (s StatsSummary)
 }
 
 // LogSource provides the query log entries of a single user.
@@ -220,6 +246,10 @@ type Config struct {
 	// then the public page does not mention the rules at all.
 	Filtering FilteringSource
 
+	// Stats reports the service-wide counters of the last 24 hours.  It may
+	// be nil, and then the public page reports zeroes for them.
+	Stats StatsSource
+
 	// SessionTTL is how long a session lasts.  Zero means
 	// [DefaultSessionTTL].
 	SessionTTL time.Duration
@@ -251,6 +281,7 @@ type Manager struct {
 	sessions  aghuser.SessionStorage
 	log       LogSource
 	filtering FilteringSource
+	stats     StatsSource
 	limiter   *loginLimiter
 	now       func() time.Time
 	ttl       time.Duration
@@ -316,6 +347,7 @@ func New(conf *Config) (m *Manager, err error) {
 		sessions:    conf.Sessions,
 		log:         conf.Log,
 		filtering:   conf.Filtering,
+		stats:       conf.Stats,
 		limiter:     newLoginLimiter(attempts, window, now),
 		now:         now,
 		ttl:         ttl,

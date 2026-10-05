@@ -49,6 +49,7 @@ type StatsResp struct {
 
 	NumDNSQueries           uint64 `json:"num_dns_queries"`
 	NumBlockedFiltering     uint64 `json:"num_blocked_filtering"`
+	NumAllowedAllowList     uint64 `json:"num_allowed_allow_list"`
 	NumReplacedSafebrowsing uint64 `json:"num_replaced_safebrowsing"`
 	NumReplacedSafesearch   uint64 `json:"num_replaced_safesearch"`
 	NumReplacedParental     uint64 `json:"num_replaced_parental"`

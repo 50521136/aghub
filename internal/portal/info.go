@@ -248,6 +248,16 @@ type PublicStats struct {
 	// accounts, counted since each account was created.
 	Queries int64 `json:"queries"`
 
+	// Queries24h, Blocked24h and Passed24h are the counters of the last 24
+	// hours as the statistics module reports them: the queries answered,
+	// the queries rejected by filtering, and the queries that matched a
+	// rule but were allowed by the allow-list.  They are not the cumulative
+	// per-account figures above, and they come from an optional module, so
+	// they are zero when it is not available.
+	Queries24h int64 `json:"queries_24h"`
+	Blocked24h int64 `json:"blocked_24h"`
+	Passed24h  int64 `json:"passed_24h"`
+
 	// Rules is the number of filtering rules in force.  Lists and
 	// CustomRules say where they come from.
 	Rules       uint64 `json:"rules"`
@@ -277,6 +287,15 @@ func (m *Manager) PublicStats() (s *PublicStats) {
 		// A disabled, expired or over-quota account cannot be used, so it is
 		// not active.  One that is merely about to expire still works.
 		s.Active = sum.Total - sum.Disabled - sum.Expired - sum.OverQuota
+	}
+
+	// Statistics are optional, so the page reports zeroes instead of a
+	// number nobody measured when the module is not there.
+	if m.stats != nil {
+		st := m.stats.Stats24h()
+		s.Queries24h = st.Queries
+		s.Blocked24h = st.Blocked
+		s.Passed24h = st.Passed
 	}
 
 	// Filtering is optional, and a page that claims zero rules would read as

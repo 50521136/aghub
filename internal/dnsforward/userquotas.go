@@ -12,6 +12,13 @@ type UserQuotas interface {
 	// implementation.  reason is the reason for the refusal, and it is empty
 	// when the query is allowed.
 	AllowQuery(clientID string, ip netip.Addr, qname string) (ok bool, reason string)
+
+	// RecordResult records the filtering outcome of a query for the user
+	// that owns clientID.  blocked is true when a filtering rule rejected
+	// the query, and passed is true when a rule matched but the query was
+	// allowed by the allow-list.  A client that belongs to no user is
+	// ignored by the implementation.
+	RecordResult(clientID string, blocked, passed bool)
 }
 
 // EmptyUserQuotas is a [UserQuotas] implementation that allows every query.
@@ -24,3 +31,6 @@ var _ UserQuotas = EmptyUserQuotas{}
 func (EmptyUserQuotas) AllowQuery(_ string, _ netip.Addr, _ string) (ok bool, _ string) {
 	return true, ""
 }
+
+// RecordResult implements the [UserQuotas] interface for EmptyUserQuotas.
+func (EmptyUserQuotas) RecordResult(_ string, _, _ bool) {}

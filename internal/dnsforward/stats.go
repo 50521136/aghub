@@ -177,5 +177,37 @@ func (s *Server) updateStats(dctx *dnsContext, clientIP string, processingTime t
 		e.Result = stats.RFiltered
 	}
 
+	// The allow-list reason is the only one the query path can use to tell
+	// that a rule matched but the query was allowed, so carry it into the
+	// statistics to make the portal's 24-hour figure real.
+	_, e.AllowListed = filteringOutcome(dctx.result.Reason)
+
 	s.stats.Update(e)
+
+	if s.userQuotas != nil {
+		blocked, passed := filteringOutcome(dctx.result.Reason)
+		s.userQuotas.RecordResult(e.Client, blocked, passed)
+	}
+}
+
+// filteringOutcome maps a filtering reason to the per-user counters.  blocked
+// is true when a filtering rule rejected the query; passed is true when a rule
+// matched but the query was allowed by the allow-list, which is the
+// false-positive that the user asked to be saved from.  A query that no rule
+// touched is neither.
+func filteringOutcome(r filtering.Reason) (blocked, passed bool) {
+	switch r {
+	case filtering.NotFilteredAllowList:
+		return false, true
+	case
+		filtering.FilteredBlockList,
+		filtering.FilteredSafeBrowsing,
+		filtering.FilteredParental,
+		filtering.FilteredSafeSearch,
+		filtering.FilteredBlockedService,
+		filtering.FilteredInvalid:
+		return true, false
+	default:
+		return false, false
+	}
 }

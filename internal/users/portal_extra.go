@@ -39,16 +39,32 @@ type RankEntry struct {
 	// TotalRequests is the number of requests since the account was created.
 	TotalRequests int64 `json:"total_requests"`
 
+	// Blocked is the number of queries that a filtering rule rejected.
+	Blocked int64 `json:"blocked"`
+
+	// Passed is the number of queries that matched a filtering rule but were
+	// allowed by the allow-list.
+	Passed int64 `json:"passed"`
+
+	// Avatar is the avatar preset the account chose, empty when it chose
+	// none.
+	Avatar string `json:"avatar"`
+
 	// LastSeen is the Unix timestamp of the last allowed request.
 	LastSeen int64 `json:"last_seen"`
 }
+
+// minRankRequests is the number of lifetime requests an account must have made
+// to appear on the public board.  The board is a list of the busiest accounts,
+// and a barely used one would only pad it.
+const minRankRequests = 1000
 
 // Ranking returns the busiest accounts, most requests first.
 //
 // Only accounts that may currently query take part: an expired or disabled
 // account on the board would be a list of people who are not being served.
-// Accounts that have never made a request are left out as well, so that a
-// freshly created account does not appear at the bottom of a public list.
+// Accounts with at most [minRankRequests] lifetime requests are left out as
+// well, so that the board shows the accounts that are actually being used.
 func (m *Manager) Ranking(limit int) (r []RankEntry) {
 	if limit <= 0 {
 		limit = 20
@@ -61,7 +77,7 @@ func (m *Manager) Ranking(limit int) (r []RankEntry) {
 	r = make([]RankEntry, 0, limit)
 
 	for _, i := range m.List() {
-		if !i.Enabled || i.Status != StatusActive || i.TotalRequests <= 0 {
+		if !i.Enabled || i.Status != StatusActive || i.TotalRequests <= minRankRequests {
 			continue
 		}
 
@@ -75,6 +91,9 @@ func (m *Manager) Ranking(limit int) (r []RankEntry) {
 			ID:            id,
 			Requests:      i.Requests,
 			TotalRequests: i.TotalRequests,
+			Blocked:       i.Blocked,
+			Passed:        i.Passed,
+			Avatar:        i.Avatar,
 			LastSeen:      i.LastSeen,
 		})
 	}

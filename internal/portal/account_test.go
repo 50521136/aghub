@@ -98,6 +98,21 @@ func (s *testUserStore) SetPortalPassword(uid, password string) (err error) {
 	return nil
 }
 
+func (s *testUserStore) SetAvatar(uid, avatar string) (err error) {
+	def, ok := s.defs[uid]
+	if !ok {
+		return errors.New("no such user")
+	}
+
+	if !users.IsValidAvatar(avatar) {
+		return errors.New("unknown avatar")
+	}
+
+	def.Avatar = avatar
+
+	return nil
+}
+
 func (s *testUserStore) FindByEmail(email string) (u *users.User) {
 	norm, err := users.NormalizeEmail(email)
 	if err != nil || norm == "" {

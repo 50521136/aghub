@@ -188,3 +188,80 @@ func TestStatsCtx_DataFromUnits_month(t *testing.T) {
 		require.NotNil(t, data)
 	}
 }
+
+// TestUnit_Add_AllowListed checks that the allow-list counter accumulates
+// within one hourly unit and survives serialization.
+func TestUnit_Add_AllowListed(t *testing.T) {
+	u := newUnit(1)
+
+	entries := []*Entry{{
+		Domain:      "allowed.example",
+		Client:      "client",
+		Result:      RNotFiltered,
+		AllowListed: true,
+	}, {
+		Domain:      "allowed.example",
+		Client:      "client",
+		Result:      RNotFiltered,
+		AllowListed: true,
+	}, {
+		Domain: "blocked.example",
+		Client: "client",
+		Result: RFiltered,
+	}}
+
+	for _, e := range entries {
+		u.add(e)
+	}
+
+	assert.Equal(t, uint64(2), u.nAllowed)
+
+	udb := u.serialize()
+	assert.Equal(t, uint64(2), udb.NAllowed)
+
+	got := &unit{}
+	got.deserialize(udb)
+	assert.Equal(t, uint64(2), got.nAllowed)
+}
+
+// TestStatsCtx_GetStats24h_window checks that GetStats24h counts only the last
+// 24 hourly units and leaves the older ones out.  The rollover is driven by
+// moving the unit ID and flushing by hand instead of by Start, so no real time
+// has to pass and no background flusher can race the test.
+func TestStatsCtx_GetStats24h_window(t *testing.T) {
+	const (
+		startHour = 10_000
+		hoursNum  = 30
+		wantHours = 24
+	)
+
+	var curHour atomic.Uint32
+	curHour.Store(startHour)
+
+	s := newTestStatsCtx(t, Config{
+		Limit:   timeutil.Day,
+		Enabled: true,
+		UnitID:  curHour.Load,
+	})
+	testutil.CleanupAndRequireSuccess(t, s.Close)
+
+	for h := range hoursNum {
+		curHour.Store(startHour + uint32(h))
+
+		// Flush the previous hour into the database before counting the
+		// new one, which is what the periodic flusher does in production.
+		_, _ = s.flush()
+
+		s.Update(&Entry{
+			Domain:      fmt.Sprintf("domain.hour%d", h),
+			Client:      "client",
+			Result:      RNotFiltered,
+			AllowListed: true,
+		})
+	}
+
+	got := s.GetStats24h()
+	assert.Equal(t, uint64(wantHours), got.Queries)
+	assert.Equal(t, uint64(wantHours), got.Allowed)
+	assert.Zero(t, got.Blocked)
+}

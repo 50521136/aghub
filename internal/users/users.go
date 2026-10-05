@@ -115,6 +115,11 @@ type User struct {
 	// [User.Email] belongs to them.  It is only ever set together with an
 	// address, and it is cleared when the address changes.
 	EmailVerified bool `json:"email_verified,omitempty"`
+
+	// Avatar is the avatar preset the user chose in the portal.  It is one
+	// of the strings in [AvatarPresets] and is empty when the user has not
+	// chosen one.  Only the preset itself is stored; there is no upload.
+	Avatar string `json:"avatar"`
 }
 
 const (
@@ -138,6 +143,14 @@ type usage struct {
 	periodStart atomic.Int64
 	lastSeen    atomic.Int64
 
+	// blocked is the number of queries of the user that a filtering rule
+	// rejected.
+	blocked atomic.Int64
+
+	// passed is the number of queries of the user that matched a filtering
+	// rule but were allowed by the allow-list.
+	passed atomic.Int64
+
 	// dayCount is the number of requests counted in the day bucket that
 	// dayStart points to.
 	dayCount atomic.Int64
@@ -158,6 +171,14 @@ type usageState struct {
 	Total       int64 `json:"total_requests"`
 	PeriodStart int64 `json:"period_start"`
 	LastSeen    int64 `json:"last_seen"`
+
+	// Blocked is the number of queries of the user that a filtering rule
+	// rejected.
+	Blocked int64 `json:"blocked,omitempty"`
+
+	// Passed is the number of queries of the user that matched a filtering
+	// rule but were allowed by the allow-list.
+	Passed int64 `json:"passed,omitempty"`
 
 	// DayStart is the Unix timestamp of the local midnight of the day bucket
 	// that is currently open.
@@ -868,6 +889,48 @@ func (m *Manager) AllowQuery(
 	return true, ""
 }
 
+// RecordResult counts the filtering outcome of a query for the user that owns
+// clientID.  blocked is true when a filtering rule rejected the query, and
+// passed is true when a rule matched but the query was allowed by the
+// allow-list, which is the count that shows how much a user's own rules would
+// have caught if the allow-list had not saved it.
+//
+// It is called on the DNS query path, so it looks the user up in the immutable
+// snapshot without taking a lock, exactly like [Manager.AllowQuery].  A client
+// that belongs to no user is dropped rather than turned into a new one: the
+// manager must never grow from ordinary traffic.
+func (m *Manager) RecordResult(clientID string, blocked, passed bool) {
+	if clientID == "" || (!blocked && !passed) {
+		return
+	}
+
+	e := m.matchByClientID(clientID)
+	if e == nil {
+		return
+	}
+
+	if blocked {
+		e.usage.blocked.Add(1)
+	}
+
+	if passed {
+		e.usage.passed.Add(1)
+	}
+
+	m.dirty.Store(true)
+}
+
+// matchByClientID returns the entry of the user owning the given client
+// identifier, if any.  It never takes a lock.
+func (m *Manager) matchByClientID(clientID string) (e *entry) {
+	snap := m.snap.Load()
+	if snap == nil {
+		return nil
+	}
+
+	return snap.byID[clientID]
+}
+
 // periodStartOf returns the cached start of the current period.
 func (m *Manager) periodStartOf(p Period) (start int64) {
 	m.mu.Lock()
@@ -1077,6 +1140,13 @@ type Info struct {
 	// TotalRequests is the number of requests since creation.
 	TotalRequests int64 `json:"total_requests"`
 
+	// Blocked is the number of queries that a filtering rule rejected.
+	Blocked int64 `json:"blocked"`
+
+	// Passed is the number of queries that matched a filtering rule but were
+	// allowed by the allow-list.
+	Passed int64 `json:"passed"`
+
 	// PeriodStart is the Unix timestamp of the start of the current period.
 	PeriodStart int64 `json:"period_start"`
 
@@ -1120,6 +1190,8 @@ func (m *Manager) info(e *entry) (i *Info) {
 		User:              u,
 		Requests:          e.usage.requests.Load(),
 		TotalRequests:     e.usage.total.Load(),
+		Blocked:           e.usage.blocked.Load(),
+		Passed:            e.usage.passed.Load(),
 		PeriodStart:       e.usage.periodStart.Load(),
 		LastSeen:          e.usage.lastSeen.Load(),
 		NextReset:         nextPeriodStart(m.now(), m.loc, u.Period),
@@ -1198,6 +1270,14 @@ type Summary struct {
 
 	// TotalRequests is the total number of requests since creation.
 	TotalRequests int64 `json:"total_requests"`
+
+	// Blocked is the total number of queries that a filtering rule rejected
+	// over all users.
+	Blocked int64 `json:"blocked"`
+
+	// Passed is the total number of queries that matched a filtering rule
+	// but were allowed by the allow-list over all users.
+	Passed int64 `json:"passed"`
 }
 
 // Summary returns the aggregate state of all users.
@@ -1208,6 +1288,8 @@ func (m *Manager) Summary() (s *Summary) {
 		s.Total++
 		s.Requests += i.Requests
 		s.TotalRequests += i.TotalRequests
+		s.Blocked += i.Blocked
+		s.Passed += i.Passed
 
 		switch i.Status {
 		case StatusDisabled:

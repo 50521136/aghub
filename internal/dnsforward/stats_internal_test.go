@@ -59,6 +59,136 @@ func (l *testStats) ShouldCount(string, uint16, uint16, []string) bool {
 	return true
 }
 
+// testUserQuotas records the last filtering outcome it was handed.
+type testUserQuotas struct {
+	lastClient  string
+	lastBlocked bool
+	lastPassed  bool
+}
+
+// type check
+var _ UserQuotas = (*testUserQuotas)(nil)
+
+// AllowQuery implements the [UserQuotas] interface for *testUserQuotas.
+func (u *testUserQuotas) AllowQuery(string, netip.Addr, string) (ok bool, reason string) {
+	return true, ""
+}
+
+// RecordResult implements the [UserQuotas] interface for *testUserQuotas.
+func (u *testUserQuotas) RecordResult(clientID string, blocked, passed bool) {
+	u.lastClient = clientID
+	u.lastBlocked = blocked
+	u.lastPassed = passed
+}
+
+// TestFilteringOutcome checks how a filtering reason maps to the per-user
+// counters: only an allow-list pass counts as passed, and only a rule
+// rejection counts as blocked.
+func TestFilteringOutcome(t *testing.T) {
+	testCases := []struct {
+		name        string
+		reason      filtering.Reason
+		wantBlocked bool
+		wantPassed  bool
+	}{{
+		name:   "not_filtered",
+		reason: filtering.NotFilteredNotFound,
+	}, {
+		name:       "allow_list_is_passed",
+		reason:     filtering.NotFilteredAllowList,
+		wantPassed: true,
+	}, {
+		name:        "block_list_is_blocked",
+		reason:      filtering.FilteredBlockList,
+		wantBlocked: true,
+	}, {
+		name:        "safe_browsing_is_blocked",
+		reason:      filtering.FilteredSafeBrowsing,
+		wantBlocked: true,
+	}, {
+		name:        "safe_search_is_blocked",
+		reason:      filtering.FilteredSafeSearch,
+		wantBlocked: true,
+	}, {
+		name:        "parental_is_blocked",
+		reason:      filtering.FilteredParental,
+		wantBlocked: true,
+	}, {
+		name:        "blocked_service_is_blocked",
+		reason:      filtering.FilteredBlockedService,
+		wantBlocked: true,
+	}, {
+		name:   "rewrite_is_neither",
+		reason: filtering.Rewritten,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			blocked, passed := filteringOutcome(tc.reason)
+			assert.Equal(t, tc.wantBlocked, blocked)
+			assert.Equal(t, tc.wantPassed, passed)
+		})
+	}
+}
+
+// TestServer_UpdateStatsRecordsTheOutcome checks that the DNS path hands the
+// filtering outcome of a query to the user manager, keyed by the client
+// identifier that the statistics entry carries.
+func TestServer_UpdateStatsRecordsTheOutcome(t *testing.T) {
+	testCases := []struct {
+		name        string
+		reason      filtering.Reason
+		wantBlocked bool
+		wantPassed  bool
+	}{{
+		name:       "allow_list_is_passed",
+		reason:     filtering.NotFilteredAllowList,
+		wantPassed: true,
+	}, {
+		name:        "block_list_is_blocked",
+		reason:      filtering.FilteredBlockList,
+		wantBlocked: true,
+	}, {
+		name:   "not_filtered_is_neither",
+		reason: filtering.NotFilteredNotFound,
+	}}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			uq := &testUserQuotas{}
+			srv := &Server{
+				baseLogger: testLogger,
+				logger:     testLogger,
+				stats:      &testStats{},
+				userQuotas: uq,
+				anonymizer: aghnet.NewIPMut(nil),
+			}
+
+			req := &dns.Msg{
+				Question: []dns.Question{{Name: "example.com."}},
+			}
+			pctx := &proxy.DNSContext{
+				Proto: proxy.ProtoTLS,
+				Req:   req,
+				Res:   &dns.Msg{},
+				Addr:  testClientAddrPort,
+			}
+			dctx := &dnsContext{
+				proxyCtx:  pctx,
+				startTime: time.Now(),
+				result:    &filtering.Result{Reason: tc.reason},
+				clientID:  "cli42",
+			}
+
+			srv.updateStats(dctx, "1.2.3.4", time.Millisecond)
+
+			assert.Equal(t, "cli42", uq.lastClient)
+			assert.Equal(t, tc.wantBlocked, uq.lastBlocked)
+			assert.Equal(t, tc.wantPassed, uq.lastPassed)
+		})
+	}
+}
+
 func TestServer_ProcessQueryLogsAndStats(t *testing.T) {
 	const domain = "example.com."
 

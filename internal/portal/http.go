@@ -33,6 +33,7 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/portal/api/config", m.handleConfig)
 	reg.Register(http.MethodGet, "/portal/api/public", m.handlePublic)
 	reg.Register(http.MethodGet, "/portal/api/ranking", m.handleRanking)
+
 	reg.Register(http.MethodPost, "/portal/api/feedback", m.handleFeedback)
 	reg.Register(http.MethodPost, "/portal/api/email/code", m.handleEmailCode)
 	reg.Register(http.MethodPost, "/portal/api/register", m.handleRegister)
@@ -40,6 +41,12 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	// These need a session of their own.
 	reg.Register(http.MethodPost, "/portal/api/password", m.handlePassword)
 	reg.Register(http.MethodPost, "/portal/api/email", m.handleEmail)
+
+	// Reading the avatar presets is public -- the picker is shown before the
+	// visitor has an account -- while setting one needs a session.  The
+	// registrar keys its mux on the path alone, so both verbs have to go
+	// through a single handler or the second registration panics.
+	reg.Register(http.MethodGet, "/portal/api/avatar", m.handleAvatarAny)
 
 	// The bundled front-end is served on the same origin as the API.  A
 	// deployment that hosts the front-end elsewhere simply ignores it.
@@ -699,6 +706,105 @@ type rankingResponse struct {
 
 	// Updated is the Unix timestamp of the response.
 	Updated int64 `json:"updated"`
+}
+
+// avatarPresetsResponse is the response of GET /portal/api/avatar.
+type avatarPresetsResponse struct {
+	// Presets is the list of avatars a user may choose.  The front-end
+	// renders them as they are; the emoji themselves are the keys, so there
+	// is no second table to keep in step.
+	Presets []string `json:"presets"`
+}
+
+// handleAvatarPresets implements GET /portal/api/avatar.
+//
+// It answers without a session: the avatar picker is shown to visitors who
+// have not signed in yet.  The list comes from the user module, which is the
+// single source of truth for both the front-end and the validation of the
+// value that is posted back.
+// handleAvatarAny serves the avatar path for both verbs.
+//
+// [Manager.Register] hands the method to the middleware wrapper, not to the
+// mux, so two registrations on one path collide.  Dispatching here keeps the
+// presets readable without a session while setting one still requires one.
+func (m *Manager) handleAvatarAny(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		m.handleAvatar(w, r)
+
+		return
+	}
+
+	m.handleAvatarPresets(w, r)
+}
+
+func (m *Manager) handleAvatarPresets(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &avatarPresetsResponse{
+		Presets: users.AvatarPresets(),
+	})
+}
+
+// avatarRequest is the body of POST /portal/api/avatar.
+type avatarRequest struct {
+	// Avatar is one of the presets from GET /portal/api/avatar.
+	Avatar string `json:"avatar"`
+}
+
+// avatarResponse is the response of POST /portal/api/avatar.
+type avatarResponse struct {
+	// OK is true when the avatar was stored.
+	OK bool `json:"ok"`
+
+	// Avatar is the avatar that was stored.
+	Avatar string `json:"avatar"`
+}
+
+// handleAvatar implements POST /portal/api/avatar.
+func (m *Manager) handleAvatar(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	u, ok := m.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	req := &avatarRequest{}
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(req)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest, "decoding request: %s", err)
+
+		return
+	}
+
+	// The check is repeated in the user module as well, so that a caller
+	// that skips this handler cannot store something the picker never
+	// offered.
+	if !users.IsValidAvatar(req.Avatar) {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest, "unknown avatar")
+
+		return
+	}
+
+	err = m.users.SetAvatar(u.UID, req.Avatar)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusInternalServerError, "%s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &avatarResponse{
+		OK:     true,
+		Avatar: req.Avatar,
+	})
 }
 
 // handleFeedback implements POST /portal/api/feedback.

@@ -57,6 +57,7 @@ func initPortal(
 		Sessions:  sessions,
 		Log:       &portalLogSource{log: log},
 		Filtering: portalFilteringSource{},
+		Stats:     portalStatsSource{},
 	})
 	if err != nil {
 		return fmt.Errorf("portal: creating the manager: %w", err)
@@ -157,4 +158,32 @@ func (portalFilteringSource) FilteringStatus() (s portal.FilteringStatus) {
 	s.Enabled = f.Settings().FilteringEnabled
 
 	return s
+}
+
+// portalStatsSource reports the service-wide counters of the last 24 hours to
+// the portal.
+//
+// Like the filtering source, it looks the module up on every call instead of
+// holding a pointer, because the portal is created while the statistics
+// module may still be nil.  A missing module yields zeroes rather than an
+// error, so the public page still renders.
+type portalStatsSource struct{}
+
+// type check
+var _ portal.StatsSource = portalStatsSource{}
+
+// Stats24h implements the [portal.StatsSource] interface.
+func (portalStatsSource) Stats24h() (s portal.StatsSummary) {
+	sts := globalContext.stats
+	if sts == nil {
+		return portal.StatsSummary{}
+	}
+
+	st := sts.GetStats24h()
+
+	return portal.StatsSummary{
+		Queries: int64(st.Queries),
+		Blocked: int64(st.Blocked),
+		Passed:  int64(st.Allowed),
+	}
 }

@@ -37,7 +37,7 @@ foreach ($entries as $e) {
 ?>
 <section class="hero">
   <h1>排行榜</h1>
-  <p class="hero-sub">解析量满 1000 才上榜，每 60 秒更新。</p>
+  <p class="hero-sub">解析量超过 1000 才上榜，每 60 秒更新。</p>
 </section>
 
 <?php if ($shown === 0): ?>
@@ -46,7 +46,7 @@ foreach ($entries as $e) {
       <?php if (is_array($rank_r) && empty($rank_r['ok'])): ?>
         读不到榜单。<?= h((string) $rank_r['error']) ?>
       <?php else: ?>
-        还没有人上榜。解析量满 1000 就会出现在这里。
+        还没有人上榜。解析量超过 1000 就会出现在这里。
       <?php endif; ?>
     </p>
   </section>
@@ -105,7 +105,7 @@ foreach ($entries as $e) {
   <?php else: ?>
     <div>
       <h2>你还没上榜</h2>
-      <p class="hint">解析量满 1000 就会上去，用起来就行。</p>
+      <p class="hint">解析量超过 1000 就会上去，用起来就行。</p>
     </div>
   <?php endif; ?>
   <a class="btn" href="<?= h(page_url('log')) ?>">看我的日志</a>
