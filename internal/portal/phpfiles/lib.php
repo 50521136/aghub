@@ -603,19 +603,18 @@ function probe_label(string $session): string
 /**
  * probe_status 问 AGHub 探测器有没有命中。
  *
- * 顺带把访问者的地址报过去，AGHub 用它区分「就是这台设备」和「账号里别的
- * 出口」，前者是强信号，后者只能说有设备在用。
+ * 只回一个布尔。不比对地址：同一 WiFi 下所有设备共用一个出口地址，拿它当判据
+ * 就会把别的设备算成这一台。随机信物本身已经能定位到具体是哪台设备。
  */
 function probe_status(string $label, string $session): array
 {
-    $miss = array('seen' => false, 'same_ip' => false, 'client_id' => '');
+    $miss = array('seen' => false);
 
     if ($label === '' || $session === '') {
         return $miss;
     }
 
-    $path = '/portal/api/probe/status?token=' . rawurlencode($label)
-        . '&ip=' . rawurlencode(client_ip());
+    $path = '/portal/api/probe/status?token=' . rawurlencode($label);
 
     $r = aghub('GET', $path, null, $session);
     if (!is_array($r) || empty($r['ok'])) {
@@ -624,11 +623,7 @@ function probe_status(string $label, string $session): array
 
     $d = isset($r['data']) && is_array($r['data']) ? $r['data'] : array();
 
-    return array(
-        'seen' => !empty($d['seen']),
-        'same_ip' => !empty($d['same_ip']),
-        'client_id' => isset($d['hit']['client_id']) ? (string) $d['hit']['client_id'] : '',
-    );
+    return array('seen' => !empty($d['seen']));
 }
 
 /**

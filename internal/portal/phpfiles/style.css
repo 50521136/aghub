@@ -742,3 +742,10 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
   opacity: 0;
   pointer-events: none;
 }
+
+/* 探测结果还没回来时的中性态，不能提前替用户下结论。 */
+.pill-wait {
+  background: #f2f5fa;
+  color: var(--fg2);
+  border-color: #dbe3ef;
+}

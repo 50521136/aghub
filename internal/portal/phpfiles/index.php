@@ -299,20 +299,21 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
     <?php if (!$logged): ?>
       <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录</a>
     <?php elseif ($probe_label !== ''): ?>
-      <?php /* 先按账号级信号渲染，探测命中后再升级成「已接入」。
-              这样即使浏览器不执行脚本，看到的也是诚实的说法而不是「检测中」。 */ ?>
+      <?php /* 这个状态只说一件事：本设备有没有在用我们。
+              账号里别的设备在不在用、同一个 WiFi 下的别的设备，都不算 ——
+              所以这里不看任何账号级的计数，等探测结果出来再落定。 */ ?>
       <span
-        class="pill <?= $connected ? 'pill-soft' : 'pill-idle' ?>"
+        class="pill pill-wait"
         data-probe-pill
         data-probe-label="<?= h($probe_label) ?>"
-      ><?= icon($connected ? 'info' : 'info') ?><span data-probe-text><?= $connected ? '有设备在用' : '未接入' ?></span></span>
+      ><?= icon('info') ?><span data-probe-text>检测中</span></span>
       <img
         class="probe-img"
         src="https://<?= h($probe_label . '.' . $probe_host) ?>/p.png"
         width="1" height="1" alt=""
       >
     <?php else: ?>
-      <span class="pill <?= $connected ? 'pill-soft' : 'pill-idle' ?>"><?= icon('info') ?><?= $connected ? '有设备在用' : '未接入' ?></span>
+      <span class="pill pill-idle"><?= icon('info') ?>未接入</span>
     <?php endif; ?>
   </header>
 
@@ -408,8 +409,8 @@ function fallback(text, done) {
  * 浏览器解析随机名字是「发出探测」，这里回头问服务端有没有收到。分几次问是
  * 因为 DoT 往返可能慢一点，一次问不到就误判成未接入。命中即停。
  *
- * 服务端已经渲染了账号级的说法，所以这里的职责只有两个：命中时升级成
- * 「已接入」，以及确认未命中且账号也不活跃时落定为「未接入」。
+ * 判定只看这个随机名字有没有到达解析器：它只有本次页面加载知道，所以命中的
+ * 一定是这台设备。地址不参与判断，同 WiFi 下的别的设备也就不会算进来。
  */
 (function () {
   var pill = document.querySelector('[data-probe-pill]');
@@ -419,20 +420,27 @@ function fallback(text, done) {
   var text = pill.querySelector('[data-probe-text]');
   if (!label || !text) { return; }
 
-  var delays = [900, 1500, 2500, 4000];
+  var delays = [500, 1000, 2000];
   var step = 0;
 
   function settle(seen) {
-    if (!seen) { return; }
+    if (seen) {
+      pill.className = 'pill pill-ok';
+      text.textContent = '已接入';
 
-    pill.className = 'pill pill-ok';
-    text.textContent = '已接入';
+      /* 战报页的标题跟着一起改，否则顶栏说已接入、正文还在教人怎么配置。 */
+      var head = document.querySelector('[data-probe-head]');
+      if (head) {
+        head.textContent = head.getAttribute('data-probe-when-seen') || head.textContent;
+      }
 
-    /* 战报页的标题跟着一起改，否则顶栏说已接入、正文还在教人怎么配置。 */
-    var head = document.querySelector('[data-probe-head]');
-    if (head) {
-      head.textContent = head.getAttribute('data-probe-when-seen') || head.textContent;
+      return;
     }
+
+    /* 重试都用完了还没命中，就是这台设备没接进来。
+       不拿账号的活跃度兜底 —— 那会让同一 WiFi 下的别的设备把这一台点亮。 */
+    pill.className = 'pill pill-idle';
+    text.textContent = '未接入';
     /* 没命中就保持服务端给的「有设备在用 / 未接入」：浏览器用自己的
        安全 DNS 时探测本来就不会命中，那时降级比给错误答案好。 */
   }
@@ -442,10 +450,14 @@ function fallback(text, done) {
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.seen) { settle(true); return; }
-        if (step < delays.length) { setTimeout(ask, delays[step++]); }
+        if (step < delays.length) { setTimeout(ask, delays[step++]); return; }
+
+        settle(false);
       })
       .catch(function () {
-        if (step < delays.length) { setTimeout(ask, delays[step++]); }
+        if (step < delays.length) { setTimeout(ask, delays[step++]); return; }
+
+        settle(false);
       });
   }
 

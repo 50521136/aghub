@@ -110,14 +110,10 @@ type probeStatusResponse struct {
 	// Seen is true when a query for the probe name reached the resolver.
 	Seen bool `json:"seen"`
 
-	// Hit describes the query that matched, when Seen is true.
+	// Hit describes the query that matched, when Seen is true.  Its address
+	// is recorded for diagnostics only; nothing is decided by comparing it
+	// with the visitor's, because every device behind one NAT shares it.
 	Hit *users.ProbeHit `json:"hit,omitempty"`
-
-	// SameIP is true when the query came from the address the browser is
-	// using.  It is the difference between "this device" and "this account,
-	// on some other connection", and it is only a hint: a phone on mobile
-	// data resolves through a different egress than it browses through.
-	SameIP bool `json:"same_ip"`
 }
 
 // handleProbeStatus implements GET /portal/api/probe/status.
@@ -140,26 +136,16 @@ func (m *Manager) handleProbeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The portal runs on the operator's own site and calls this server side,
-	// so the request comes from that site rather than from the visitor.  The
-	// visitor's address arrives as a parameter instead.
-	var visitor netip.Addr
-	if v := r.URL.Query().Get("ip"); v != "" {
-		visitor, _ = netip.ParseAddr(v)
-	}
-
 	resp := &probeStatusResponse{}
 
+	// The answer is the probe alone.  The token in the name is known only to
+	// the page load that issued it, so a match is this device by construction
+	// and no address comparison is needed -- which is just as well, since
+	// every device behind one NAT shares an address.
 	hit, found := m.users.ProbeStatus(u.UID, label)
 	if found {
 		resp.Seen = true
 		resp.Hit = hit
-
-		if visitor.IsValid() {
-			if addr, err := netip.ParseAddr(hit.IP); err == nil {
-				resp.SameIP = addr == visitor
-			}
-		}
 	}
 
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, resp)
