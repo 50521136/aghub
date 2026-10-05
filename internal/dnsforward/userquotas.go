@@ -11,7 +11,7 @@ type UserQuotas interface {
 	// ClientID and IP address is allowed.  Allowed queries are counted by the
 	// implementation.  reason is the reason for the refusal, and it is empty
 	// when the query is allowed.
-	AllowQuery(clientID string, ip netip.Addr) (ok bool, reason string)
+	AllowQuery(clientID string, ip netip.Addr, qname string) (ok bool, reason string)
 }
 
 // EmptyUserQuotas is a [UserQuotas] implementation that allows every query.
@@ -21,6 +21,6 @@ type EmptyUserQuotas struct{}
 var _ UserQuotas = EmptyUserQuotas{}
 
 // AllowQuery implements the [UserQuotas] interface for EmptyUserQuotas.
-func (EmptyUserQuotas) AllowQuery(_ string, _ netip.Addr) (ok bool, _ string) {
+func (EmptyUserQuotas) AllowQuery(_ string, _ netip.Addr, _ string) (ok bool, _ string) {
 	return true, ""
 }

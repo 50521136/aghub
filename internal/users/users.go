@@ -228,6 +228,14 @@ type Manager struct {
 	// dirty is set when the state has unsaved changes.
 	dirty atomic.Bool
 
+	// probesMu protects probes.  It is separate from mu because probes are
+	// touched on the query path, which must not contend with the lock that
+	// guards persistence.
+	probesMu sync.Mutex
+
+	// probes holds the connectivity probes that have not expired yet.
+	probes map[string]*probeEntry
+
 	// periodStart caches the start of the current period by period type.
 	periodStart map[Period]int64
 
@@ -377,6 +385,7 @@ func New(cfg *Config) (m *Manager, err error) {
 		defs:            map[string]*User{},
 		usage:           map[string]*usage{},
 		portalPasswords: map[string]string{},
+		probes:          map[string]*probeEntry{},
 		path:            cfg.Path,
 		loc:             loc,
 		periodStart:     map[Period]int64{},
@@ -806,7 +815,16 @@ func (m *Manager) match(clientID string, ip netip.Addr) (e *entry) {
 //
 // A client that belongs to no user is allowed and left uncounted unless
 // [Settings.DenyUnmatched] is set, in which case the user list acts as the gate.
-func (m *Manager) AllowQuery(clientID string, ip netip.Addr) (ok bool, reason string) {
+func (m *Manager) AllowQuery(
+	clientID string,
+	ip netip.Addr,
+	qname string,
+) (ok bool, reason string) {
+	// The probe is recorded before the allow decision, because a device
+	// pointed at us has proved what the portal asked it to prove even when
+	// the answer is a refusal: an account over its quota is still connected.
+	m.matchProbe(qname, clientID, ip)
+
 	e := m.match(clientID, ip)
 	if e == nil {
 		if s := m.settings.Load(); s != nil && s.DenyUnmatched {

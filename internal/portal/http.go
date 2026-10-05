@@ -54,9 +54,115 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 func (m *Manager) RegisterAdmin(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/control/portal/package", m.handlePackage)
 	reg.Register(http.MethodPost, "/control/portal/mail/test", m.handleMailTest)
+	reg.Register(http.MethodPost, "/portal/api/probe", m.handleProbe)
+	reg.Register(http.MethodGet, "/portal/api/probe/status", m.handleProbeStatus)
 	reg.Register(http.MethodGet, "/control/portal/feedback", m.handleFeedbackList)
 	reg.Register(http.MethodPost, "/control/portal/feedback/read", m.handleFeedbackRead)
 	reg.Register(http.MethodPost, "/control/portal/feedback/delete", m.handleFeedbackDelete)
+}
+
+// probeResponse is the response of POST /portal/api/probe.
+type probeResponse struct {
+	// Label is the first label of the name the browser must resolve.  The
+	// caller appends its own domain to build the full name; nothing has to
+	// answer it, because the query reaching the resolver is the whole point.
+	Label string `json:"label"`
+
+	// TTL is how many seconds the probe stays matchable.
+	TTL int `json:"ttl"`
+}
+
+// handleProbe implements POST /portal/api/probe.
+//
+// The portal cannot ask a browser which resolver it uses -- there is no such
+// API -- so it asks the device to prove it instead: the browser resolves a
+// random name, and the answer is read from the resolver side.  The name
+// carries a token that only this page load knows, so a match cannot come from
+// any other device of the account.
+func (m *Manager) handleProbe(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	u, ok := m.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	label := m.users.RegisterProbe(u.UID)
+	if label == "" {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusInternalServerError,
+			"issuing probe")
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &probeResponse{
+		Label: label,
+		TTL:   int(users.ProbeTTL.Seconds()),
+	})
+}
+
+// probeStatusResponse is the response of GET /portal/api/probe/status.
+type probeStatusResponse struct {
+	// Seen is true when a query for the probe name reached the resolver.
+	Seen bool `json:"seen"`
+
+	// Hit describes the query that matched, when Seen is true.
+	Hit *users.ProbeHit `json:"hit,omitempty"`
+
+	// SameIP is true when the query came from the address the browser is
+	// using.  It is the difference between "this device" and "this account,
+	// on some other connection", and it is only a hint: a phone on mobile
+	// data resolves through a different egress than it browses through.
+	SameIP bool `json:"same_ip"`
+}
+
+// handleProbeStatus implements GET /portal/api/probe/status.
+func (m *Manager) handleProbeStatus(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	u, ok := m.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	label := r.URL.Query().Get("token")
+	if label == "" {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest, "token is required")
+
+		return
+	}
+
+	// The portal runs on the operator's own site and calls this server side,
+	// so the request comes from that site rather than from the visitor.  The
+	// visitor's address arrives as a parameter instead.
+	var visitor netip.Addr
+	if v := r.URL.Query().Get("ip"); v != "" {
+		visitor, _ = netip.ParseAddr(v)
+	}
+
+	resp := &probeStatusResponse{}
+
+	hit, found := m.users.ProbeStatus(u.UID, label)
+	if found {
+		resp.Seen = true
+		resp.Hit = hit
+
+		if visitor.IsValid() {
+			if addr, err := netip.ParseAddr(hit.IP); err == nil {
+				resp.SameIP = addr == visitor
+			}
+		}
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, resp)
 }
 
 // feedbackListResponse is the response of the GET /control/portal/feedback HTTP

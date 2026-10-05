@@ -21,13 +21,13 @@ func TestManagerDenyUnmatched(t *testing.T) {
 	ip := netip.MustParseAddr("10.0.0.1")
 
 	// By default an unknown client is allowed and not counted.
-	ok, reason := m.AllowQuery("nobody", ip)
+	ok, reason := m.AllowQuery("nobody", ip, "")
 	if !ok || reason != "" {
 		t.Fatalf("expected unmatched client to be allowed, got ok=%v reason=%q", ok, reason)
 	}
 
 	// A known client is still governed by its own quota.
-	ok, reason = m.AllowQuery("alice", ip)
+	ok, reason = m.AllowQuery("alice", ip, "")
 	if !ok || reason != "" {
 		t.Fatalf("expected alice to be allowed, got ok=%v reason=%q", ok, reason)
 	}
@@ -37,13 +37,13 @@ func TestManagerDenyUnmatched(t *testing.T) {
 		t.Fatalf("setting settings: %v", err)
 	}
 
-	ok, reason = m.AllowQuery("nobody", ip)
+	ok, reason = m.AllowQuery("nobody", ip, "")
 	if ok || reason != ReasonUnmatched {
 		t.Fatalf("expected unmatched client to be refused, got ok=%v reason=%q", ok, reason)
 	}
 
 	// The known client must be unaffected by the switch.
-	ok, reason = m.AllowQuery("alice", ip)
+	ok, reason = m.AllowQuery("alice", ip, "")
 	if !ok || reason != "" {
 		t.Fatalf("expected alice to still be allowed, got ok=%v reason=%q", ok, reason)
 	}
@@ -54,7 +54,7 @@ func TestManagerDenyUnmatched(t *testing.T) {
 		t.Fatalf("setting settings: %v", err)
 	}
 
-	ok, reason = m.AllowQuery("nobody", ip)
+	ok, reason = m.AllowQuery("nobody", ip, "")
 	if !ok || reason != "" {
 		t.Fatalf("expected unmatched client to be allowed again, got ok=%v reason=%q", ok, reason)
 	}
@@ -79,7 +79,7 @@ func TestManagerDenyUnmatchedCountsNothing(t *testing.T) {
 	ip := netip.MustParseAddr("10.0.0.1")
 
 	for range 3 {
-		ok, reason := m.AllowQuery("nobody", ip)
+		ok, reason := m.AllowQuery("nobody", ip, "")
 		if ok || reason != ReasonUnmatched {
 			t.Fatalf("expected refusal, got ok=%v reason=%q", ok, reason)
 		}

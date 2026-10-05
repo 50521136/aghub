@@ -726,3 +726,19 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
   .copy-k { color: var(--fg2); }
   .podium-medal { color: #0f141b; }
 }
+
+/* 弱信号：账号的标识最近有查询，但没能确认就是你手上这台设备。 */
+.pill-soft {
+  background: #fff7e6;
+  color: #8a5a00;
+  border-color: #ffe0a3;
+}
+
+/* 探测用的 1x1 图，只为触发一次域名解析，不占位。 */
+.probe-img {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

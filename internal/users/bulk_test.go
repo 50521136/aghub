@@ -130,7 +130,7 @@ func TestBulkAddCreatesUsers(t *testing.T) {
 	ip := netip.MustParseAddr("10.0.0.1")
 
 	for _, id := range []string{"a", "b", "c"} {
-		ok, reason := m.AllowQuery(id, ip)
+		ok, reason := m.AllowQuery(id, ip, "")
 		if !ok {
 			t.Errorf("expected %q to be allowed, reason=%q", id, reason)
 		}

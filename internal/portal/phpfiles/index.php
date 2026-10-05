@@ -17,7 +17,7 @@ $nav = nav_items();
 
 // 除了四个标签页，还有两个挂在它们下面的页面：日志在「我的」里，注册在登录流程里。
 // 这两个不在导航表里，所以不能拿导航表当白名单。
-$extra = array('log' => 'me', 'register' => 'me', 'ios' => 'me');
+$extra = array('log' => 'me', 'register' => 'me', 'ios' => 'me', 'probe' => 'me');
 
 $page = isset($_GET['p']) ? (string) $_GET['p'] : 'report';
 if (!isset($nav[$page]) && !isset($extra[$page])) {
@@ -218,6 +218,15 @@ if (is_array($rank_r) && !empty($rank_r['ok'])) {
         ? $rank_r['data']['entries'] : array();
 }
 
+// 登录之后申请一个探测器：页面把要解析的名字发给浏览器，随后回来问结果。
+// 这一步不走并发批次，因为它绝不能命中缓存 —— 缓存下来的探测器会被复用，
+// 探测就失去意义了。
+$probe_label = '';
+$probe_host = site_host();
+if ($logged && $probe_host !== '') {
+    $probe_label = probe_label($session);
+}
+
 $domain = isset($public['domain']) ? (string) $public['domain'] : '';
 $ids = isset($user['ids']) && is_array($user['ids']) ? $user['ids'] : array();
 $primary_id = $ids !== array() ? (string) $ids[0] : '';
@@ -229,6 +238,20 @@ $visitor_ip = client_ip();
 $connected = false;
 if ($logged && !empty($client['connected'])) {
     $connected = true;
+}
+
+// ------------------------------------------------------------------ 探测结果
+
+// 浏览器回头问「刚才那个名字有没有到达解析器」。这是纯 JSON 端点，不能走到
+// 页面渲染里去。
+if ($page === 'probe') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+
+    $r = probe_status(isset($_GET['t']) ? (string) $_GET['t'] : '', $session);
+
+    echo json_encode($r, JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 // ------------------------------------------------------------------ 描述文件
@@ -273,12 +296,23 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
       <span class="brand-dot"></span>
       <span class="brand-name"><?= h($host !== '' ? $host : $title) ?></span>
     </div>
-    <?php if ($connected): ?>
-      <span class="pill pill-ok"><?= icon('shield') ?>已接入</span>
-    <?php elseif (!$logged): ?>
+    <?php if (!$logged): ?>
       <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录</a>
+    <?php elseif ($probe_label !== ''): ?>
+      <?php /* 先按账号级信号渲染，探测命中后再升级成「已接入」。
+              这样即使浏览器不执行脚本，看到的也是诚实的说法而不是「检测中」。 */ ?>
+      <span
+        class="pill <?= $connected ? 'pill-soft' : 'pill-idle' ?>"
+        data-probe-pill
+        data-probe-label="<?= h($probe_label) ?>"
+      ><?= icon($connected ? 'info' : 'info') ?><span data-probe-text><?= $connected ? '有设备在用' : '未接入' ?></span></span>
+      <img
+        class="probe-img"
+        src="https://<?= h($probe_label . '.' . $probe_host) ?>/p.png"
+        width="1" height="1" alt=""
+      >
     <?php else: ?>
-      <span class="pill pill-idle"><?= icon('info') ?>未接入</span>
+      <span class="pill <?= $connected ? 'pill-soft' : 'pill-idle' ?>"><?= icon('info') ?><?= $connected ? '有设备在用' : '未接入' ?></span>
     <?php endif; ?>
   </header>
 
@@ -367,6 +401,56 @@ function fallback(text, done) {
   try { document.execCommand('copy'); done(); } catch (e) { alert('复制失败，请手动选中：' + text); }
   document.body.removeChild(ta);
 }
+</script>
+<script>
+/* 探测的重试阶梯。
+ *
+ * 浏览器解析随机名字是「发出探测」，这里回头问服务端有没有收到。分几次问是
+ * 因为 DoT 往返可能慢一点，一次问不到就误判成未接入。命中即停。
+ *
+ * 服务端已经渲染了账号级的说法，所以这里的职责只有两个：命中时升级成
+ * 「已接入」，以及确认未命中且账号也不活跃时落定为「未接入」。
+ */
+(function () {
+  var pill = document.querySelector('[data-probe-pill]');
+  if (!pill) { return; }
+
+  var label = pill.getAttribute('data-probe-label') || '';
+  var text = pill.querySelector('[data-probe-text]');
+  if (!label || !text) { return; }
+
+  var delays = [900, 1500, 2500, 4000];
+  var step = 0;
+
+  function settle(seen) {
+    if (!seen) { return; }
+
+    pill.className = 'pill pill-ok';
+    text.textContent = '已接入';
+
+    /* 战报页的标题跟着一起改，否则顶栏说已接入、正文还在教人怎么配置。 */
+    var head = document.querySelector('[data-probe-head]');
+    if (head) {
+      head.textContent = head.getAttribute('data-probe-when-seen') || head.textContent;
+    }
+    /* 没命中就保持服务端给的「有设备在用 / 未接入」：浏览器用自己的
+       安全 DNS 时探测本来就不会命中，那时降级比给错误答案好。 */
+  }
+
+  function ask() {
+    fetch('?p=probe&t=' + encodeURIComponent(label), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.seen) { settle(true); return; }
+        if (step < delays.length) { setTimeout(ask, delays[step++]); }
+      })
+      .catch(function () {
+        if (step < delays.length) { setTimeout(ask, delays[step++]); }
+      });
+  }
+
+  setTimeout(ask, delays[step++]);
+})();
 </script>
 </body>
 </html>

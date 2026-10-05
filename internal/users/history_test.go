@@ -17,7 +17,7 @@ func queryUser(t *testing.T, m *Manager, id string, n int) {
 	ip := netip.MustParseAddr("10.0.0.1")
 
 	for range n {
-		ok, reason := m.AllowQuery(id, ip)
+		ok, reason := m.AllowQuery(id, ip, "")
 		require.True(t, ok, "query rejected: %s", reason)
 	}
 }
@@ -280,7 +280,7 @@ func TestUsageHistoryConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 
 			for range 200 {
-				m.AllowQuery("alice", ip)
+				m.AllowQuery("alice", ip, "")
 			}
 		}()
 	}

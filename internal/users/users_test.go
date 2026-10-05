@@ -160,13 +160,13 @@ func TestManagerQuotaEnforcement(t *testing.T) {
 	ip := netip.MustParseAddr("192.168.1.20")
 
 	for i := range 3 {
-		ok, reason := m.AllowQuery("", ip)
+		ok, reason := m.AllowQuery("", ip, "")
 		if !ok {
 			t.Fatalf("request %d: expected allow, got refuse with %q", i+1, reason)
 		}
 	}
 
-	ok, reason := m.AllowQuery("", ip)
+	ok, reason := m.AllowQuery("", ip, "")
 	if ok {
 		t.Fatal("expected the 4th request to be refused")
 	}
@@ -177,7 +177,7 @@ func TestManagerQuotaEnforcement(t *testing.T) {
 
 	// A different client must not be affected.
 	other := netip.MustParseAddr("192.168.1.21")
-	ok, _ = m.AllowQuery("", other)
+	ok, _ = m.AllowQuery("", other, "")
 	if !ok {
 		t.Error("expected an unrelated client to be allowed")
 	}
@@ -196,12 +196,12 @@ func TestManagerQuotaPeriodReset(t *testing.T) {
 
 	ip := netip.MustParseAddr("192.168.1.30")
 
-	ok, _ := m.AllowQuery("", ip)
+	ok, _ := m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatal("expected the first request to be allowed")
 	}
 
-	ok, reason := m.AllowQuery("", ip)
+	ok, reason := m.AllowQuery("", ip, "")
 	if ok {
 		t.Fatal("expected the second request to be refused")
 	}
@@ -216,7 +216,7 @@ func TestManagerQuotaPeriodReset(t *testing.T) {
 		t.Fatalf("refreshing periods: %v", err)
 	}
 
-	ok, reason = m.AllowQuery("", ip)
+	ok, reason = m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatalf("expected the request to be allowed after the reset, got %q", reason)
 	}
@@ -239,7 +239,7 @@ func TestManagerTotalPeriodNeverResets(t *testing.T) {
 
 	ip := netip.MustParseAddr("192.168.1.31")
 
-	ok, _ := m.AllowQuery("", ip)
+	ok, _ := m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatal("expected the first request to be allowed")
 	}
@@ -249,7 +249,7 @@ func TestManagerTotalPeriodNeverResets(t *testing.T) {
 		t.Fatalf("refreshing periods: %v", err)
 	}
 
-	ok, reason := m.AllowQuery("", ip)
+	ok, reason := m.AllowQuery("", ip, "")
 	if ok {
 		t.Fatal("expected the second request to be refused")
 	}
@@ -272,14 +272,14 @@ func TestManagerExpiry(t *testing.T) {
 
 	ip := netip.MustParseAddr("192.168.1.40")
 
-	ok, _ := m.AllowQuery("", ip)
+	ok, _ := m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatal("expected the request to be allowed before expiry")
 	}
 
 	*now = now.Add(25 * time.Hour)
 
-	ok, reason := m.AllowQuery("", ip)
+	ok, reason := m.AllowQuery("", ip, "")
 	if ok {
 		t.Fatal("expected the request to be refused after expiry")
 	}
@@ -305,7 +305,7 @@ func TestManagerManualDisable(t *testing.T) {
 
 	ip := netip.MustParseAddr("192.168.1.50")
 
-	ok, reason := m.AllowQuery("", ip)
+	ok, reason := m.AllowQuery("", ip, "")
 	if ok {
 		t.Fatal("expected the request to be refused")
 	}
@@ -318,7 +318,7 @@ func TestManagerManualDisable(t *testing.T) {
 		t.Fatalf("expected 1 updated user, got %d", n)
 	}
 
-	ok, reason = m.AllowQuery("", ip)
+	ok, reason = m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatalf("expected the request to be allowed after enabling, got %q", reason)
 	}
@@ -335,17 +335,17 @@ func TestManagerCIDRMatching(t *testing.T) {
 		Enabled:      true,
 	})
 
-	ok, _ := m.AllowQuery("", netip.MustParseAddr("10.20.5.5"))
+	ok, _ := m.AllowQuery("", netip.MustParseAddr("10.20.5.5"), "")
 	if !ok {
 		t.Fatal("expected an address in the subnet to be matched")
 	}
 
-	ok, _ = m.AllowQuery("", netip.MustParseAddr("10.20.5.6"))
+	ok, _ = m.AllowQuery("", netip.MustParseAddr("10.20.5.6"), "")
 	if ok {
 		t.Fatal("expected the quota to be shared by the whole subnet")
 	}
 
-	ok, _ = m.AllowQuery("", netip.MustParseAddr("10.21.5.5"))
+	ok, _ = m.AllowQuery("", netip.MustParseAddr("10.21.5.5"), "")
 	if !ok {
 		t.Error("expected an address outside the subnet to be allowed")
 	}
@@ -362,17 +362,17 @@ func TestManagerClientIDMatching(t *testing.T) {
 		Enabled:      true,
 	})
 
-	ok, _ := m.AllowQuery("my-doh-client", netip.Addr{})
+	ok, _ := m.AllowQuery("my-doh-client", netip.Addr{}, "")
 	if !ok {
 		t.Fatal("expected the ClientID to be matched")
 	}
 
-	ok, _ = m.AllowQuery("my-doh-client", netip.Addr{})
+	ok, _ = m.AllowQuery("my-doh-client", netip.Addr{}, "")
 	if ok {
 		t.Fatal("expected the quota to be exhausted")
 	}
 
-	ok, _ = m.AllowQuery("other-client", netip.Addr{})
+	ok, _ = m.AllowQuery("other-client", netip.Addr{}, "")
 	if !ok {
 		t.Error("expected an unrelated ClientID to be allowed")
 	}
@@ -391,12 +391,12 @@ func TestManagerReset(t *testing.T) {
 
 	ip := netip.MustParseAddr("192.168.1.60")
 
-	ok, _ := m.AllowQuery("", ip)
+	ok, _ := m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatal("expected the first request to be allowed")
 	}
 
-	ok, _ = m.AllowQuery("", ip)
+	ok, _ = m.AllowQuery("", ip, "")
 	if ok {
 		t.Fatal("expected the second request to be refused")
 	}
@@ -405,7 +405,7 @@ func TestManagerReset(t *testing.T) {
 		t.Fatalf("expected 1 reset user, got %d", n)
 	}
 
-	ok, reason := m.AllowQuery("", ip)
+	ok, reason := m.AllowQuery("", ip, "")
 	if !ok {
 		t.Fatalf("expected the request to be allowed after the reset, got %q", reason)
 	}
@@ -479,7 +479,7 @@ func TestManagerPersistence(t *testing.T) {
 		Enabled:      true,
 	})
 
-	ok, _ := m.AllowQuery("", netip.MustParseAddr("192.168.1.80"))
+	ok, _ := m.AllowQuery("", netip.MustParseAddr("192.168.1.80"), "")
 	if !ok {
 		t.Fatal("expected the request to be allowed")
 	}
@@ -542,7 +542,7 @@ func TestManagerRemove(t *testing.T) {
 	}
 
 	ip := netip.MustParseAddr("192.168.1.90")
-	ok, _ := m.AllowQuery("", ip)
+	ok, _ := m.AllowQuery("", ip, "")
 	if !ok {
 		t.Error("expected an unknown client to be allowed")
 	}

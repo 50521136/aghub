@@ -32,7 +32,7 @@ foreach ($history as $p) {
 $points = array_slice($points, -7, 7, true);
 ?>
 <section class="hero">
-  <h1><?= $connected ? '广告正在被拦下' : ($logged ? '把设备接进来' : '加密 DNS 战报') ?></h1>
+  <h1 data-probe-head data-probe-when-seen="广告正在被拦下" data-probe-when-idle="<?= $connected ? '广告正在被拦下' : '把设备接进来' ?>"><?= $connected ? '广告正在被拦下' : ($logged ? '把设备接进来' : '加密 DNS 战报') ?></h1>
   <p class="hero-sub">
     <?php if ($connected): ?>
       解析正在加密传输，广告已经拦下
@@ -125,11 +125,21 @@ $points = array_slice($points, -7, 7, true);
     <h2>接入状态</h2>
     <span class="card-note">看查询记录自动判断</span>
   </div>
+  <?php /* 三种说法对应三种把握，不把「不确定」说成「未接入」：
+           已接入   —— 探测命中，就是你这台设备在用
+           有设备在用 —— 账号的标识最近有查询，但确认不了是不是你这台
+           未接入   —— 确实没有任何查询 */ ?>
   <?php if ($connected): ?>
-    <p class="hint">检测到你正在用本站解析，广告过滤已经生效。</p>
+    <p class="hint">
+      检测到你的账号最近有解析请求，广告过滤已经在生效。
+    </p>
+    <p class="hint">
+      如果下面显示「已接入」，说明就是你这台设备在用；显示「有设备在用」则表示
+      账号里别的设备在用，你这台还没接进来。
+    </p>
   <?php else: ?>
     <p class="hint">
-      这个判断是看查询记录来的：只要设备在用 <?= h($host) ?> 解析，回到本页就会显示已接入。
+      把 <?= h($host) ?> 填进设备的加密 DNS，回到本页就会显示已接入。
       <?php if (!$logged): ?>
         登录之后可以在「我的」里拿到接入地址。
       <?php else: ?>

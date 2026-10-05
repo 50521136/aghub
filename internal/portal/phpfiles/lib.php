@@ -570,6 +570,90 @@ function pct($used, $limit): int
     return max(0, min(100, $p));
 }
 
+/**
+ * probe_label 向 AGHub 申请一个探测器，返回要解析的第一个标签。
+ *
+ * 网页读不到系统的 DNS 设置，所以只能反过来：让设备去解析一个随机名字，
+ * 再看解析器那边有没有收到。名字里的随机串只有这一次页面加载知道，因此
+ * 「收到」就等于「加载这个页面的设备在用我们」。
+ *
+ * 不走 fetch_all 的缓存 —— 探测器必须每次都是新的。
+ */
+function probe_label(string $session): string
+{
+    if ($session === '') {
+        return '';
+    }
+
+    $r = aghub('POST', '/portal/api/probe', array(), $session);
+    if (!is_array($r) || empty($r['ok'])) {
+        return '';
+    }
+
+    $label = isset($r['data']['label']) ? (string) $r['data']['label'] : '';
+
+    // 只接受预期的形状，避免把任意内容拼进页面里的地址。
+    if ($label === '' || strpos($label, 'aghub-probe-') !== 0) {
+        return '';
+    }
+
+    return $label;
+}
+
+/**
+ * probe_status 问 AGHub 探测器有没有命中。
+ *
+ * 顺带把访问者的地址报过去，AGHub 用它区分「就是这台设备」和「账号里别的
+ * 出口」，前者是强信号，后者只能说有设备在用。
+ */
+function probe_status(string $label, string $session): array
+{
+    $miss = array('seen' => false, 'same_ip' => false, 'client_id' => '');
+
+    if ($label === '' || $session === '') {
+        return $miss;
+    }
+
+    $path = '/portal/api/probe/status?token=' . rawurlencode($label)
+        . '&ip=' . rawurlencode(client_ip());
+
+    $r = aghub('GET', $path, null, $session);
+    if (!is_array($r) || empty($r['ok'])) {
+        return $miss;
+    }
+
+    $d = isset($r['data']) && is_array($r['data']) ? $r['data'] : array();
+
+    return array(
+        'seen' => !empty($d['seen']),
+        'same_ip' => !empty($d['same_ip']),
+        'client_id' => isset($d['hit']['client_id']) ? (string) $d['hit']['client_id'] : '',
+    );
+}
+
+/**
+ * site_host 取本站自己的主机名，用来给探测器拼一个子域名。
+ *
+ * 用自己域名的子域而不是第三方域名：不泄露给外人，也不会有 CSP 或混合内容
+ * 的问题。IP 地址和单标签主机名拼不出子域，那种情况直接放弃探测。
+ */
+function site_host(): string
+{
+    $host = isset($_SERVER['HTTP_HOST']) ? (string) $_SERVER['HTTP_HOST'] : '';
+    if ($host === '' || strpos($host, '.') === false) {
+        return '';
+    }
+
+    if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+        return '';
+    }
+
+    // 去掉端口。
+    $host = explode(':', $host)[0];
+
+    return $host;
+}
+
 /** dot_host 拼出接入主机名。 */
 function dot_host(string $id, string $domain): string
 {

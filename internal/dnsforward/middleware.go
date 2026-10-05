@@ -42,7 +42,7 @@ func (s *Server) Wrap(h proxy.Handler) (wrapped proxy.Handler) {
 		if s.userQuotas != nil {
 			var ok bool
 			var reason string
-			ok, reason = s.userQuotas.AllowQuery(clientID, pctx.Addr.Addr())
+			ok, reason = s.userQuotas.AllowQuery(clientID, pctx.Addr.Addr(), qnameOf(pctx))
 			if !ok {
 				l.DebugContext(
 					ctx,
@@ -69,6 +69,17 @@ func (s *Server) Wrap(h proxy.Handler) (wrapped proxy.Handler) {
 	}
 
 	return proxy.HandlerFunc(f)
+}
+
+// qnameOf returns the name being resolved, or an empty string when the request
+// carries no question.  The name is passed on to the user manager, which uses
+// it to match connectivity probes from the user portal.
+func qnameOf(pctx *proxy.DNSContext) (qname string) {
+	if pctx.Req == nil || len(pctx.Req.Question) == 0 {
+		return ""
+	}
+
+	return pctx.Req.Question[0].Name
 }
 
 // serveBlockedResponse sets a protocol-appropriate response for a request that

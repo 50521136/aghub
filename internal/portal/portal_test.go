@@ -80,6 +80,14 @@ func (s *testUserStore) Ranking(limit int) (r []users.RankEntry) {
 	return s.ranking
 }
 
+func (s *testUserStore) RegisterProbe(uid string) (label string) {
+	return "aghub-probe-test"
+}
+
+func (s *testUserStore) ProbeStatus(uid, label string) (hit *users.ProbeHit, ok bool) {
+	return nil, false
+}
+
 func (s *testUserStore) ListFeedback(limit int) (r []*users.Feedback) {
 	if len(s.feedback) > limit && limit > 0 {
 		return s.feedback[len(s.feedback)-limit:]

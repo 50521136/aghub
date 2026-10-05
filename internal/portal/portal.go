@@ -121,6 +121,14 @@ type UserStore interface {
 	// not opened yet.
 	CountUnreadFeedback() (n int)
 
+	// RegisterProbe issues a connectivity probe for the account and returns
+	// the label the browser must resolve.
+	RegisterProbe(uid string) (label string)
+
+	// ProbeStatus returns the hit of a probe registered by the account, if
+	// the query has arrived.
+	ProbeStatus(uid, label string) (hit *users.ProbeHit, ok bool)
+
 	// AddFeedback stores a message from a portal user.
 	AddFeedback(f *users.Feedback) (saved *users.Feedback, err error)
 
