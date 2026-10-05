@@ -17,6 +17,24 @@ const defaultSMTPPort = 587
 // mailTimeout bounds every step of a delivery.
 const mailTimeout = 20 * time.Second
 
+// implicitTLSPorts are the ports that speak TLS from the first byte, as
+// opposed to greeting in the clear and upgrading with STARTTLS.
+//
+// The distinction matters and cannot be guessed from the host: a server on 465
+// waits for the TLS handshake and never sends the plain-text banner, so a
+// client that greets in the clear waits forever for a greeting that will not
+// come.  Port 465 is the submission-over-TLS port from RFC 8314; 994 is the
+// older convention some providers still use.
+var implicitTLSPorts = map[int]bool{
+	465: true,
+	994: true,
+}
+
+// usesImplicitTLS reports whether the port expects TLS before any SMTP traffic.
+func usesImplicitTLS(port int) (ok bool) {
+	return implicitTLSPorts[port]
+}
+
 // SMTPConfig is the mail configuration resolved from the settings.
 type SMTPConfig struct {
 	// Host is the host name of the mail server.
@@ -34,7 +52,9 @@ type SMTPConfig struct {
 	// From is the sender address.
 	From string
 
-	// Plain is true when the connection must be made without STARTTLS.
+	// Plain is true when the connection must be made without any TLS at all.
+	//  It is separate from the implicit-TLS ports, which do use TLS, just
+	//  without a STARTTLS upgrade.
 	Plain bool
 }
 
@@ -109,6 +129,25 @@ func SendMail(c *SMTPConfig, to, subject, body string) (err error) {
 
 	_ = conn.SetDeadline(time.Now().Add(mailTimeout))
 
+	tlsConf := &tls.Config{
+		ServerName: c.Host,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// On an implicit-TLS port the handshake comes first: the server will not
+	// say anything until it has one, so waiting for the greeting before
+	// starting TLS deadlocks until the deadline expires.
+	if !c.Plain && usesImplicitTLS(c.Port) {
+		tlsConn := tls.Client(conn, tlsConf)
+
+		err = tlsConn.Handshake()
+		if err != nil {
+			return fmt.Errorf("starting TLS: %w", err)
+		}
+
+		conn = tlsConn
+	}
+
 	client, err := smtp.NewClient(conn, c.Host)
 	if err != nil {
 		return fmt.Errorf("starting the mail session: %w", err)
@@ -118,12 +157,7 @@ func SendMail(c *SMTPConfig, to, subject, body string) (err error) {
 		_ = client.Close()
 	}()
 
-	if !c.Plain {
-		tlsConf := &tls.Config{
-			ServerName: c.Host,
-			MinVersion: tls.VersionTLS12,
-		}
-
+	if !c.Plain && !usesImplicitTLS(c.Port) {
 		err = client.StartTLS(tlsConf)
 		if err != nil {
 			return fmt.Errorf("starting TLS: %w", err)
