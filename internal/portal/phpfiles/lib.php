@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 
-/** 配置在 include 时被读进来一次。 */
+/** cfg 读配置，只读一次。 */
 function cfg(string $key, $default = null)
 {
     static $conf = null;
@@ -29,9 +29,6 @@ function cfg(string $key, $default = null)
 /**
  * aghub 调一次 AGHub 的门户接口，返回 array('ok' => bool, 'status' => int,
  * 'error' => string, 'data' => array)。
- *
- * 每次都带上对接令牌 —— 它就是让这份部署包能调接口的凭据。会话令牌（用户登录
- * 之后拿到的那个）放在 Authorization 头上传。
  */
 function aghub(string $method, string $path, ?array $body = null, string $session = ''): array
 {
@@ -105,8 +102,7 @@ function aghub_error_message(int $code, array $data): string
     }
 
     if ($code === 403) {
-        return '对接令牌不对，或者 AGHub 那边已经重新生成过令牌了。'
-            . '去管理端复制新的，填进 config.php。';
+        return '对接令牌不对，或者 AGHub 那边已经重新生成过令牌了。去管理端复制新的，填进 config.php。';
     }
 
     if ($code === 0) {
@@ -116,9 +112,71 @@ function aghub_error_message(int $code, array $data): string
     return 'AGHub 返回了 HTTP ' . $code . '。';
 }
 
+// --------------------------------------------------------------------- 缓存
+
+/**
+ * cache_get 取缓存值，过期或不存在时返回 $default。
+ *
+ * 日志这种翻来覆去看同一页的东西没必要每次都回源问 AGHub。缓存放在会话里，
+ * 不落盘、不共享，所以不会串号。
+ */
+function cache_get(string $key, $default = null)
+{
+    if (!isset($_SESSION['cache'][$key])) {
+        return $default;
+    }
+
+    $item = $_SESSION['cache'][$key];
+    if (!is_array($item) || !isset($item['at'], $item['ttl'])) {
+        return $default;
+    }
+
+    if (time() - (int) $item['at'] > (int) $item['ttl']) {
+        unset($_SESSION['cache'][$key]);
+
+        return $default;
+    }
+
+    return $item['v'];
+}
+
+/** cache_set 写缓存。 */
+function cache_set(string $key, $value, int $ttl): void
+{
+    $_SESSION['cache'][$key] = array('at' => time(), 'ttl' => $ttl, 'v' => $value);
+}
+
+/** cache_forget 删缓存。 */
+function cache_forget(string $key): void
+{
+    unset($_SESSION['cache'][$key]);
+}
+
+/**
+ * cached 拿缓存，没有就调 $fn 生成并缓存，返回 array('v','at','fresh')。
+ *
+ * 命中时顺便把「什么时候拿的」带出来，页面可以显示，用户就知道看到的是不是刚拿的。
+ */
+function cached(string $key, int $ttl, callable $fn): array
+{
+    // 直接看会话里那条记录本身。不能拿 cache_get 的返回值去判断 —— 它返回的是
+    // 内层的值，那种写法永远判不到，等于每次回源，缓存形同虚设。
+    $item = isset($_SESSION['cache'][$key]) ? $_SESSION['cache'][$key] : null;
+    if (is_array($item)
+        && isset($item['at'], $item['ttl'])
+        && time() - (int) $item['at'] <= (int) $item['ttl']) {
+        return array('v' => $item['v'], 'at' => (int) $item['at'], 'fresh' => false);
+    }
+
+    $v = $fn();
+    cache_set($key, $v, $ttl);
+
+    return array('v' => $v, 'at' => time(), 'fresh' => true);
+}
+
 // ------------------------------------------------------------------- 会话
 
-/** session_boot 起一个属于本门户的会话，跟 AGHub 的会话互不影响。 */
+/** session_boot 起一个属于本门户的会话。 */
 function session_boot(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -130,15 +188,13 @@ function session_boot(): void
         'lifetime' => 0,
         'path' => '/',
         'httponly' => true,
-        // 站点是 https 时带上 Secure；http 站点会自动省略，否则 cookie
-        // 会被浏览器丢掉。
         'secure' => is_https(),
         'samesite' => 'Lax',
     ));
     session_start();
 }
 
-/** is_https 判断浏览器这一跳是不是 https（宝塔反代时看 X-Forwarded-Proto）。 */
+/** is_https 判断浏览器这一跳是不是 https。 */
 function is_https(): bool
 {
     if (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') {
@@ -159,10 +215,10 @@ function session_token(): string
     return isset($_SESSION['aghub_token']) ? (string) $_SESSION['aghub_token'] : '';
 }
 
-/** session_forget 退出登录。 */
+/** session_forget 退出登录，顺带清掉这个人的缓存。 */
 function session_forget(): void
 {
-    unset($_SESSION['aghub_token'], $_SESSION['aghub_user']);
+    unset($_SESSION['aghub_token'], $_SESSION['aghub_user'], $_SESSION['cache']);
 }
 
 /** csrf_token 取（必要时生成）本会话的 CSRF 令牌。 */
@@ -183,6 +239,54 @@ function csrf_ok(): bool
     return $sent !== '' && !empty($_SESSION['csrf']) && hash_equals((string) $_SESSION['csrf'], $sent);
 }
 
+// ------------------------------------------------------------------- 访问者
+
+/** client_ip 取访问者的地址。 */
+function client_ip(): string
+{
+    $fwd = isset($_SERVER['HTTP_X_FORWARDED_FOR']) ? (string) $_SERVER['HTTP_X_FORWARDED_FOR'] : '';
+    if ($fwd !== '') {
+        $first = trim(explode(',', $fwd)[0]);
+        if ($first !== '') {
+            return $first;
+        }
+    }
+
+    return isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+}
+
+/** ip_is_v6 判断是不是 IPv6。 */
+function ip_is_v6(string $ip): bool
+{
+    return strpos($ip, ':') !== false;
+}
+
+/** device_name 从 UA 猜一个设备名，认不出来就返回空。 */
+function device_name(): string
+{
+    $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+    if ($ua === '') {
+        return '';
+    }
+
+    $map = array(
+        'iPhone' => 'iPhone',
+        'iPad' => 'iPad',
+        'Android' => '安卓设备',
+        'Windows' => 'Windows 电脑',
+        'Macintosh' => 'Mac',
+        'Linux' => 'Linux 设备',
+    );
+
+    foreach ($map as $needle => $name) {
+        if (strpos($ua, $needle) !== false) {
+            return $name;
+        }
+    }
+
+    return '';
+}
+
 // ------------------------------------------------------------------- 显示
 
 /** h 转义，所有输出都走它。 */
@@ -191,40 +295,31 @@ function h($v): string
     return htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-/** bytes_h 把字节数变成人话。 */
-function bytes_h(int $n): string
+/** num_h 给数字加千分位。 */
+function num_h($n): string
 {
-    if ($n < 1000) {
-        return (string) $n;
-    }
-
-    $units = array('K', 'M', 'G', 'T');
-    $v = (float) $n;
-    foreach ($units as $u) {
-        $v /= 1000.0;
-        if ($v < 1000.0) {
-            return round($v, 1) . $u;
-        }
-    }
-
-    return round($v, 1) . 'P';
+    return number_format((float) $n);
 }
 
-/** num_h 给数字加千分位。 */
-function num_h(int $n): string
+/** big_h 把大数字压成 1.2亿 / 3456万 这种。 */
+function big_h($n): string
 {
-    return number_format($n);
+    $n = (float) $n;
+    if ($n < 10000) {
+        return number_format($n);
+    }
+
+    if ($n < 100000000) {
+        return rtrim(rtrim(number_format($n / 10000, 1), '0'), '.') . '万';
+    }
+
+    return rtrim(rtrim(number_format($n / 100000000, 2), '0'), '.') . '亿';
 }
 
 /** period_h 把配额周期变成人话。 */
 function period_h(string $p): string
 {
-    $map = array(
-        'day' => '每天',
-        'week' => '每周',
-        'month' => '每月',
-        'year' => '每年',
-    );
+    $map = array('day' => '每天', 'week' => '每周', 'month' => '每月', 'year' => '每年', 'total' => '不限周期');
 
     return isset($map[$p]) ? $map[$p] : $p;
 }
@@ -243,8 +338,9 @@ function status_h(string $s): string
 }
 
 /** remaining_h 把剩余秒数变成人话。 */
-function remaining_h(int $sec): string
+function remaining_h($sec): string
 {
+    $sec = (int) $sec;
     if ($sec < 0) {
         return '不限';
     }
@@ -296,25 +392,30 @@ function since_h(int $ts): string
         return intdiv($d, 3600) . ' 小时前';
     }
 
-    return intdiv($d, 86400) . ' 天前';
+    if ($d < 2592000) {
+        return intdiv($d, 86400) . ' 天前';
+    }
+
+    return date('m-d', $ts);
 }
 
 /** pct 算百分比，夹在 0..100。 */
-function pct(int $used, int $limit): int
+function pct($used, $limit): int
 {
+    $limit = (int) $limit;
     if ($limit <= 0) {
         return 0;
     }
 
-    $p = (int) round($used * 100 / $limit);
+    $p = (int) round((int) $used * 100 / $limit);
 
     return max(0, min(100, $p));
 }
 
-/** endpoint_h 从域名推出一个接入地址。 */
+/** dot_host 拼出接入主机名。 */
 function dot_host(string $id, string $domain): string
 {
-    return $domain === '' ? '' : $id . '.' . $domain;
+    return ($domain === '' || $id === '') ? '' : $id . '.' . $domain;
 }
 
 /** doh_url 拼出 DoH 地址。 */
@@ -342,7 +443,6 @@ function page_url(string $page = '', array $params = array()): string
         $base = '/';
     }
 
-    // REQUEST_URI 可能带着脚本名，去掉 ?query 之后原样用。
     if (substr($base, -1) !== '/') {
         $base = dirname($base);
         if ($base === '.' || $base === '\\' || $base === '') {
@@ -360,4 +460,94 @@ function redirect(string $url): void
 {
     header('Location: ' . $url);
     exit;
+}
+
+/** asset 给静态文件加版本号，改样式之后不会被浏览器缓存挡住。 */
+function asset(string $file): string
+{
+    $path = __DIR__ . '/' . $file;
+    $v = is_file($path) ? (string) filemtime($path) : '1';
+
+    return $file . '?v=' . $v;
+}
+
+/**
+ * nav_items 返回底部导航的标签，顺序就是显示顺序，第一个是首页。
+ */
+function nav_items(): array
+{
+    return array(
+        'report' => array('label' => '战报', 'icon' => 'chart'),
+        'ranking' => array('label' => '排行榜', 'icon' => 'trophy'),
+        'feedback' => array('label' => '反馈', 'icon' => 'feedback'),
+        'me' => array('label' => '我的', 'icon' => 'user'),
+    );
+}
+
+/** icon 输出一个线性图标。 */
+function icon(string $name, string $class = ''): string
+{
+    $paths = array(
+        'chart' => '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/>'
+            . '<path d="M8 16.5v-4M12 16.5v-8M16 16.5v-6"/>',
+        'trophy' => '<path d="M7 4h10v4.5a5 5 0 0 1-10 0V4Z"/>'
+            . '<path d="M7 6H4.5v1.5A2.5 2.5 0 0 0 7 10M17 6h2.5v1.5A2.5 2.5 0 0 1 17 10"/>'
+            . '<path d="M12 13.5V17M8.5 20h7l-.7-3h-5.6l-.7 3Z"/>',
+        'feedback' => '<path d="M4.5 5.5h15v11h-9L6 20v-3.5H4.5v-11Z"/>'
+            . '<path d="M8.5 9.5h7M8.5 12.8h4.5"/>',
+        'user' => '<circle cx="12" cy="8.5" r="3.6"/>'
+            . '<path d="M4.8 20c.6-3.8 3.6-6 7.2-6s6.6 2.2 7.2 6"/>',
+        'copy' => '<rect x="9" y="9" width="11" height="11" rx="2.5"/>'
+            . '<path d="M15 6.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h.5"/>',
+        'refresh' => '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/>',
+        'info' => '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.1"/>',
+        'shield' => '<path d="M12 3.5 19 6.5v5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5v-5l7-3Z"/>',
+        'bolt' => '<path d="M13 3 5.5 13.5H11l-1 7.5 7.5-10.5H12l1-7.5Z"/>',
+        'block' => '<circle cx="12" cy="12" r="8.5"/><path d="M6.5 6.5l11 11"/>',
+        'check' => '<path d="M5 12.5 10 17.5 19 7"/>',
+        'logout' => '<path d="M15 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2"/>'
+            . '<path d="M10 12h11M18 8.5 21.5 12 18 15.5"/>',
+        'key' => '<circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H21M18 12v3M15 12v2"/>',
+        'globe' => '<circle cx="12" cy="12" r="8.5"/>'
+            . '<path d="M3.5 12h17M12 3.5c2.4 2.4 2.4 14.6 0 17M12 3.5c-2.4 2.4-2.4 14.6 0 17"/>',
+        'clock' => '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+        'send' => '<path d="M20.5 3.5 3.5 10.5l6.5 2.5 2.5 6.5 8-16Z"/><path d="M10 13l4-4"/>',
+    );
+
+    $body = isset($paths[$name]) ? $paths[$name] : '';
+
+    return '<svg class="ic ' . h($class) . '" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+        . ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        . $body . '</svg>';
+}
+
+/** sparkline 用 div 画一个迷你柱状图，不需要 canvas。 */
+function sparkline(array $values, int $height = 46): string
+{
+    if ($values === array()) {
+        return '';
+    }
+
+    $peak = 1;
+    foreach ($values as $v) {
+        if ((int) $v > $peak) {
+            $peak = (int) $v;
+        }
+    }
+
+    $out = '<div class="spark" style="height:' . (int) $height . 'px">';
+    foreach ($values as $label => $v) {
+        $p = (int) round((int) $v * 100 / $peak);
+        if ($p < 4 && (int) $v > 0) {
+            $p = 4;
+        }
+
+        $title = h((string) $label . '：' . num_h($v) . ' 次');
+
+        $out .= '<div class="spark-col" title="' . $title . '">'
+            . '<i style="height:' . (int) $p . '%"></i></div>';
+    }
+    $out .= '</div>';
+
+    return $out;
 }

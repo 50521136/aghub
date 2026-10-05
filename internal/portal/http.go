@@ -32,6 +32,8 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	// cannot sign in yet still has to be able to reach them.
 	reg.Register(http.MethodGet, "/portal/api/config", m.handleConfig)
 	reg.Register(http.MethodGet, "/portal/api/public", m.handlePublic)
+	reg.Register(http.MethodGet, "/portal/api/ranking", m.handleRanking)
+	reg.Register(http.MethodPost, "/portal/api/feedback", m.handleFeedback)
 	reg.Register(http.MethodPost, "/portal/api/email/code", m.handleEmailCode)
 	reg.Register(http.MethodPost, "/portal/api/register", m.handleRegister)
 
@@ -469,6 +471,98 @@ func (m *Manager) handlePublic(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, m.PublicStats())
+}
+
+// handleRanking implements GET /portal/api/ranking.
+//
+// The board is public, like the statistics page: it is what makes the portal
+// worth opening when a visitor has nothing to configure.
+func (m *Manager) handleRanking(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	limit := 20
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+
+	entries := m.users.Ranking(limit)
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &rankingResponse{
+		Entries: entries,
+		Updated: time.Now().Unix(),
+	})
+}
+
+// rankingResponse is the response of GET /portal/api/ranking.
+type rankingResponse struct {
+	// Entries are the rows of the board, best first.
+	Entries []users.RankEntry `json:"entries"`
+
+	// Updated is the Unix timestamp of the response.
+	Updated int64 `json:"updated"`
+}
+
+// handleFeedback implements POST /portal/api/feedback.
+func (m *Manager) handleFeedback(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	u, ok := m.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	body := &struct {
+		// Content is the message itself.
+		Content string `json:"content"`
+
+		// Contact is an optional way to reach the sender.
+		Contact string `json:"contact"`
+	}{}
+
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(body)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest,
+			"decoding feedback: %s", err)
+
+		return
+	}
+
+	saved, err := m.users.AddFeedback(&users.Feedback{
+		UID:     u.UID,
+		Name:    u.Name,
+		Contact: body.Contact,
+		Content: body.Content,
+	})
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest,
+			"storing feedback: %s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &feedbackResponse{
+		ID:        saved.ID,
+		CreatedAt: saved.CreatedAt,
+	})
+}
+
+// feedbackResponse is the response of POST /portal/api/feedback.
+type feedbackResponse struct {
+	// ID is the identifier of the stored message.
+	ID string `json:"id"`
+
+	// CreatedAt is the Unix timestamp of the message.
+	CreatedAt int64 `json:"created_at"`
 }
 
 // handleLog implements GET /portal/api/log.

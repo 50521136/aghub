@@ -102,6 +102,14 @@ type UserStore interface {
 	// anything about an individual account.
 	Summary() (s *users.Summary)
 
+	// Ranking returns the busiest accounts.  The leaderboard shows it to
+	// everyone, signed in or not, so it must carry only what the board
+	// displays: a name, an identifier and a count.
+	Ranking(limit int) (r []users.RankEntry)
+
+	// AddFeedback stores a message from a portal user.
+	AddFeedback(f *users.Feedback) (saved *users.Feedback, err error)
+
 	// Register creates an account for a portal user, generating the identifier
 	// that the account and the DNS identity share.
 	Register(p *users.RegisterParams) (u *users.User, err error)

@@ -2,9 +2,9 @@
 /**
  * AGHub 门户 —— 入口。
  *
- * 整个页面由 PHP 渲染：浏览器只会请求本站，页面里没有任何对 AGHub 的
- * 浏览器端调用。所以既没有跨域，也没有混合内容 —— 这一跳是 PHP 在服务端
- * 完成的，http/https 都行，跟本站是不是 https 无关。
+ * 整个页面由 PHP 渲染：浏览器只会请求本站，页面里没有任何对 AGHub 的浏览器端
+ * 调用。所以既没有跨域，也没有混合内容 —— 这一跳是 PHP 在服务端完成的，
+ * http/https 都行，跟本站是不是 https 无关。
  */
 
 declare(strict_types=1);
@@ -13,7 +13,20 @@ require_once __DIR__ . '/lib.php';
 
 session_boot();
 
-$page = isset($_GET['p']) ? (string) $_GET['p'] : '';
+$nav = nav_items();
+
+// 除了四个标签页，还有两个挂在它们下面的页面：日志在「我的」里，注册在登录流程里。
+// 这两个不在导航表里，所以不能拿导航表当白名单。
+$extra = array('log' => 'me', 'register' => 'me');
+
+$page = isset($_GET['p']) ? (string) $_GET['p'] : 'report';
+if (!isset($nav[$page]) && !isset($extra[$page])) {
+    $page = 'report';
+}
+
+// 高亮哪个标签：日志和注册都算「我的」。
+$tab = isset($extra[$page]) ? $extra[$page] : $page;
+
 $flash_error = '';
 $flash_ok = '';
 
@@ -39,8 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($r['ok'] && !empty($r['data']['token'])) {
                 session_regenerate_id(true);
                 $_SESSION['aghub_token'] = (string) $r['data']['token'];
-                unset($_SESSION['csrf']);
-                redirect(page_url());
+                unset($_SESSION['csrf'], $_SESSION['cache']);
+                redirect(page_url('me'));
             }
 
             $flash_error = $r['error'] !== '' ? $r['error'] : '用户名或密码不对。';
@@ -74,6 +87,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    } elseif ($action === 'feedback') {
+        if (session_token() === '') {
+            $flash_error = '请先登录再反馈。';
+        } else {
+            $content = trim(isset($_POST['content']) ? (string) $_POST['content'] : '');
+            $contact = trim(isset($_POST['contact']) ? (string) $_POST['contact'] : '');
+
+            if ($content === '') {
+                $flash_error = '写点内容吧。';
+            } else {
+                $r = aghub('POST', '/portal/api/feedback', array(
+                    'content' => $content,
+                    'contact' => $contact,
+                ), session_token());
+
+                if ($r['ok']) {
+                    $flash_ok = '收到了，谢谢反馈。';
+                    $page = 'feedback';
+                } else {
+                    $flash_error = $r['error'];
+                }
+            }
+        }
     } elseif ($action === 'register') {
         $name = trim(isset($_POST['name']) ? (string) $_POST['name'] : '');
         $email = trim(isset($_POST['email']) ? (string) $_POST['email'] : '');
@@ -86,10 +122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ));
 
         if ($r['ok']) {
-            $flash_ok = '注册成功，现在可以登录了。';
-            $page = '';
+            $flash_ok = '注册成功，用刚才的用户名登录即可。';
+            $page = 'me';
         } else {
             $flash_error = $r['error'];
+        }
+    }
+}
+
+// 刷新日志时跳过缓存。
+if (isset($_GET['fresh'])) {
+    foreach (array_keys(isset($_SESSION['cache']) ? $_SESSION['cache'] : array()) as $k) {
+        if (strpos((string) $k, 'log:') === 0) {
+            cache_forget((string) $k);
         }
     }
 }
@@ -98,16 +143,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $logged = session_token() !== '';
 
-// 公共统计：未登录也要看得到。
-$pub = aghub('GET', '/portal/api/public');
-$public = $pub['ok'] ? $pub['data'] : array();
+// 公共统计：未登录也要看得到。缓存 20 秒，避免每次翻页都回源。
+$pub = cached('public', 20, function () {
+    return aghub('GET', '/portal/api/public');
+});
+$pub_r = $pub['v'];
+$public = (is_array($pub_r) && !empty($pub_r['ok'])) ? $pub_r['data'] : array();
 
-// 站点配置（注册开关、公告）。
-$cfg_r = aghub('GET', '/portal/api/config');
-$site = $cfg_r['ok'] ? $cfg_r['data'] : array();
+// 站点配置（注册开关、公告）。缓存久一点，它几乎不变。
+$cfg_c = cached('config', 60, function () {
+    return aghub('GET', '/portal/api/config');
+});
+$cfg_r = $cfg_c['v'];
+$site = (is_array($cfg_r) && !empty($cfg_r['ok'])) ? $cfg_r['data'] : array();
 
 $user = array();
 $log = array();
+$log_at = 0;
+$log_fresh = true;
 
 if ($logged) {
     $me = aghub('GET', '/portal/api/me', null, session_token());
@@ -115,7 +168,6 @@ if ($logged) {
     if ($me['ok']) {
         $user = isset($me['data']['user']) && is_array($me['data']['user']) ? $me['data']['user'] : array();
     } elseif ($me['status'] === 401) {
-        // 会话在 AGHub 那边失效了。
         session_forget();
         $logged = false;
         $flash_error = '登录状态已失效，请重新登录。';
@@ -124,16 +176,33 @@ if ($logged) {
     }
 }
 
+// 日志：缓存 30 秒。翻来覆去开同一页不会再打 AGHub 一次。
 if ($logged && $page === 'log') {
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
-    if ($limit < 10 || $limit > 200) {
+    if ($limit < 20 || $limit > 200) {
         $limit = 50;
     }
 
-    $r = aghub('GET', '/portal/api/log?limit=' . $limit, null, session_token());
-    if ($r['ok']) {
+    $term = isset($_GET['term']) ? trim((string) $_GET['term']) : '';
+
+    $session = session_token();
+    $q = '/portal/api/log?limit=' . $limit;
+    if ($term !== '') {
+        $q .= '&term=' . rawurlencode($term);
+    }
+
+    // 缓存键带上条件，换搜索词或条数就是另一次查询。
+    $c = cached('log:' . md5($q), 30, function () use ($q, $session) {
+        return aghub('GET', $q, null, $session);
+    });
+
+    $r = $c['v'];
+    $log_at = (int) $c['at'];
+    $log_fresh = (bool) $c['fresh'];
+
+    if (is_array($r) && !empty($r['ok'])) {
         $log = isset($r['data']['data']) && is_array($r['data']['data']) ? $r['data']['data'] : array();
-    } else {
+    } elseif (is_array($r)) {
         $flash_error = $r['error'];
     }
 }
@@ -142,75 +211,131 @@ $domain = isset($public['domain']) ? (string) $public['domain'] : '';
 $ids = isset($user['ids']) && is_array($user['ids']) ? $user['ids'] : array();
 $primary_id = $ids !== array() ? (string) $ids[0] : '';
 
+// 当前访问者是否已经通过加密 DNS 接进来了：拿他的地址和账号里记的比。
+$client = isset($user['client']) && is_array($user['client']) ? $user['client'] : array();
+$visitor_ip = client_ip();
+$connected = false;
+if ($logged && !empty($client['connected'])) {
+    $connected = true;
+}
+
 // ------------------------------------------------------------------ 渲染
 
 $title = (string) cfg('title', 'DNS 服务');
+$host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SERVER['HTTP_HOST'] : '');
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= h($title) ?></title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef4fd">
+<title><?= h($title) ?> · <?= h($nav[$page]['label']) ?></title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 7l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9v-6z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="<?= h(asset('style.css')) ?>">
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="<?= h(page_url()) ?>"><?= h($title) ?></a>
-    <nav>
-      <?php if ($logged): ?>
-        <a href="<?= h(page_url()) ?>"<?= $page === '' ? ' class="on"' : '' ?>>概览</a>
-        <a href="<?= h(page_url('log')) ?>"<?= $page === 'log' ? ' class="on"' : '' ?>>查询日志</a>
-        <a href="<?= h(page_url('account')) ?>"<?= $page === 'account' ? ' class="on"' : '' ?>>账号</a>
-        <form method="post" class="inline">
-          <input type="hidden" name="action" value="logout">
-          <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-          <button type="submit" class="link">退出</button>
-        </form>
-      <?php else: ?>
-        <a href="#login">登录</a>
-        <?php if (!empty($site['registration_open'])): ?>
-          <a href="<?= h(page_url('register')) ?>">注册</a>
-        <?php endif; ?>
-      <?php endif; ?>
-    </nav>
-  </div>
-</header>
+<div class="shell">
 
-<main class="wrap">
-<?php if ($flash_error !== ''): ?>
-  <div class="alert bad"><?= h($flash_error) ?></div>
-<?php endif; ?>
-<?php if ($flash_ok !== ''): ?>
-  <div class="alert good"><?= h($flash_ok) ?></div>
-<?php endif; ?>
-<?php if (empty($public)): ?>
-  <div class="alert bad">
-    读不到 AGHub 的数据。<?= h($pub['error']) ?>
-    <br>检查 config.php 里的 <code>aghub_url</code> 和 <code>token</code>。
-  </div>
-<?php endif; ?>
-<?php if (isset($site['announcement']) && $site['announcement'] !== ''): ?>
-  <div class="notice"><?= nl2br(h($site['announcement'])) ?></div>
-<?php endif; ?>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name"><?= h($host !== '' ? $host : $title) ?></span>
+    </div>
+    <?php if ($connected): ?>
+      <span class="pill pill-ok"><?= icon('shield') ?>已接入</span>
+    <?php elseif (!$logged): ?>
+      <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录</a>
+    <?php else: ?>
+      <span class="pill pill-idle"><?= icon('info') ?>未接入</span>
+    <?php endif; ?>
+  </header>
 
-<?php if ($page === 'log' && $logged): ?>
-  <?php require __DIR__ . '/page_log.php'; ?>
-<?php elseif ($page === 'account' && $logged): ?>
-  <?php require __DIR__ . '/page_account.php'; ?>
-<?php elseif ($page === 'register' && !$logged && !empty($site['registration_open'])): ?>
-  <?php require __DIR__ . '/page_register.php'; ?>
-<?php elseif ($logged): ?>
-  <?php require __DIR__ . '/page_panel.php'; ?>
-<?php else: ?>
-  <?php require __DIR__ . '/page_public.php'; ?>
-<?php endif; ?>
-</main>
+  <main class="main">
+  <?php if ($flash_error !== ''): ?>
+    <div class="alert bad"><?= h($flash_error) ?></div>
+  <?php endif; ?>
+  <?php if ($flash_ok !== ''): ?>
+    <div class="alert good"><?= h($flash_ok) ?></div>
+  <?php endif; ?>
+  <?php if (empty($public)): ?>
+    <div class="alert bad">
+      读不到 AGHub 的数据。<?= h(is_array($pub_r) ? (string) $pub_r['error'] : '') ?>
+      <br>检查 config.php 里的 <code>aghub_url</code> 和 <code>token</code>。
+    </div>
+  <?php endif; ?>
 
-<footer class="wrap foot">
-  <span>由 <strong>AGHub</strong> 提供 DNS 服务</span>
-</footer>
+  <?php
+  switch ($page) {
+      case 'ranking':
+          require __DIR__ . '/page_ranking.php';
+          break;
+      case 'feedback':
+          require __DIR__ . '/page_feedback.php';
+          break;
+      case 'me':
+          require __DIR__ . '/page_me.php';
+          break;
+      case 'log':
+          if (!$logged) {
+              require __DIR__ . '/page_login.php';
+          } else {
+              require __DIR__ . '/page_log.php';
+          }
+          break;
+      case 'register':
+          if (!empty($site['registration_open'])) {
+              require __DIR__ . '/page_register.php';
+          } else {
+              require __DIR__ . '/page_report.php';
+          }
+          break;
+      default:
+          require __DIR__ . '/page_report.php';
+          break;
+  }
+  ?>
+  </main>
+
+  <nav class="tabbar">
+    <?php foreach ($nav as $key => $item): ?>
+      <a class="tab<?= $key === $tab ? ' on' : '' ?>" href="<?= h(page_url($key)) ?>">
+        <span class="tab-bar"></span>
+        <?= icon($item['icon']) ?>
+        <span class="tab-label"><?= h($item['label']) ?></span>
+      </a>
+    <?php endforeach; ?>
+  </nav>
+
+</div>
+<script>
+/* 只有「复制」用到 JS —— 页面本身是 PHP 渲染好的，没有浏览器端接口调用。 */
+function copyThis(btn) {
+  var row = btn.closest('.copy-row');
+  var text = row ? row.getAttribute('data-copy') : '';
+  if (!text) return;
+  var done = function () {
+    var old = btn.textContent;
+    btn.textContent = '已复制';
+    setTimeout(function () { btn.textContent = old; }, 1500);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+  } else {
+    fallback(text, done);
+  }
+}
+function fallback(text, done) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { alert('复制失败，请手动选中：' + text); }
+  document.body.removeChild(ta);
+}
+</script>
 </body>
 </html>

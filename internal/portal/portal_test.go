@@ -56,6 +56,11 @@ type testUserStore struct {
 	// summary is what the store reports as the aggregate state of all
 	// accounts.  A nil value stands for an empty one.
 	summary *users.Summary
+	// ranking is what Ranking returns.
+	ranking []users.RankEntry
+
+	// feedback collects what AddFeedback stored.
+	feedback []*users.Feedback
 }
 
 // Summary implements the [UserStore] interface.
@@ -69,6 +74,22 @@ func (s *testUserStore) EnsurePortalToken() (tok string, err error) {
 
 func (s *testUserStore) CheckPortalToken(tok string) (ok bool) {
 	return s.portalToken != "" && tok == s.portalToken
+}
+
+func (s *testUserStore) Ranking(limit int) (r []users.RankEntry) {
+	return s.ranking
+}
+
+func (s *testUserStore) AddFeedback(f *users.Feedback) (saved *users.Feedback, err error) {
+	if f.Content == "" {
+		return nil, fmt.Errorf("feedback: empty message")
+	}
+
+	f.ID = "test-feedback"
+	f.CreatedAt = 1700000000
+	s.feedback = append(s.feedback, f)
+
+	return f, nil
 }
 
 func (s *testUserStore) Summary() (sum *users.Summary) {

@@ -1,102 +1,117 @@
 <?php
 /**
- * 查询日志。数据来自 AGHub，只显示属于当前账号的那些请求。
+ * 查询日志。只显示自己的请求。
+ *
+ * 这一页是「翻来覆去看」的典型，所以结果缓存 30 秒：切来切去不会再打 AGHub
+ * 一次。要最新的点「刷新」，会跳过缓存重新取。
  */
 
 declare(strict_types=1);
 
-/** log_time 把日志里的时间戳变成人话。 */
-function log_time($v): string
-{
-    if (!is_string($v) || $v === '') {
-        return '—';
-    }
-
-    $ts = strtotime($v);
-
-    return $ts === false ? $v : date('m-d H:i:s', $ts);
+$term = isset($_GET['term']) ? trim((string) $_GET['term']) : '';
+$limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
+if ($limit < 20 || $limit > 200) {
+    $limit = 50;
 }
 
-/** log_answer 把应答压成一行。 */
-function log_answer($answer): string
-{
-    if (!is_array($answer) || $answer === array()) {
-        return '—';
-    }
-
-    $parts = array();
-    foreach (array_slice($answer, 0, 2) as $a) {
-        if (!is_array($a)) {
-            continue;
-        }
-
-        $v = isset($a['value']) ? (string) $a['value'] : '';
-        $t = isset($a['type']) ? (string) $a['type'] : '';
-        if ($v !== '') {
-            $parts[] = $t !== '' ? $t . ' ' . $v : $v;
-        }
-    }
-
-    $more = count($answer) - 2;
-
-    return $parts === array() ? '—' : implode('，', $parts) . ($more > 0 ? ' 等 ' . count($answer) . ' 条' : '');
-}
+$count = count($log);
+$age = $log_at > 0 ? max(0, time() - $log_at) : 0;
 ?>
-<section class="hello">
-  <div>
-    <h1>查询日志</h1>
-    <p class="sub">只显示你自己的请求，最近 <?= count($log) ?> 条。</p>
-  </div>
-  <div class="row">
-    <a class="btn<?= (isset($_GET['limit']) && (int) $_GET['limit'] === 100) ? ' on' : '' ?>" href="<?= h(page_url('log', array('limit' => 50))) ?>">50 条</a>
-    <a class="btn<?= (isset($_GET['limit']) && (int) $_GET['limit'] === 100) ? ' on' : '' ?>" href="<?= h(page_url('log', array('limit' => 100))) ?>">100 条</a>
-    <a class="btn" href="<?= h(page_url('log')) ?>">刷新</a>
+<section class="hero">
+  <div class="hero-row">
+    <div>
+      <h1>查询日志</h1>
+      <p class="hero-sub">最近 <?= (int) $count ?> 条，只显示你自己的请求。</p>
+    </div>
+    <a class="btn btn-icon" href="<?= h(page_url('log', array('limit' => $limit, 'fresh' => 1))) ?>"
+       title="跳过缓存重新取"><?= icon('refresh') ?>刷新</a>
   </div>
 </section>
 
-<section class="card">
+<form class="search" method="get">
+  <input type="hidden" name="p" value="log">
+  <input type="hidden" name="limit" value="<?= (int) $limit ?>">
+  <input type="text" name="term" value="<?= h($term) ?>" placeholder="搜域名、客户端或地址">
+  <button type="submit" class="btn">搜索</button>
+</form>
+
+<div class="log-meta">
+  <?php if ($log_fresh): ?>
+    <span class="tag tag-ok"><?= icon('check') ?>刚刚获取</span>
+  <?php else: ?>
+    <span class="tag"><?= icon('clock') ?><?= (int) $age ?> 秒前的缓存</span>
+  <?php endif; ?>
+  <span class="log-meta-txt">30 秒内翻回本页不会再请求一次</span>
+  <span class="row-actions">
+    <a class="link" href="<?= h(page_url('log', array('limit' => 20, 'term' => $term))) ?>">20 条</a>
+    <a class="link<?= $limit === 50 ? ' on' : '' ?>" href="<?= h(page_url('log', array('limit' => 50, 'term' => $term))) ?>">50 条</a>
+    <a class="link<?= $limit === 100 ? ' on' : '' ?>" href="<?= h(page_url('log', array('limit' => 100, 'term' => $term))) ?>">100 条</a>
+  </span>
+</div>
+
 <?php if ($log === array()): ?>
-  <p class="hint">还没有记录。客户端开始用上面的地址解析之后，这里就会出现。</p>
-<?php else: ?>
-  <div class="tablewrap">
-  <table class="log">
-    <thead>
-      <tr>
-        <th>时间</th>
-        <th>域名</th>
-        <th>类型</th>
-        <th>结果</th>
-        <th>来源</th>
-        <th class="num">耗时</th>
-      </tr>
-    </thead>
-    <tbody>
-    <?php foreach ($log as $e): ?>
-      <?php
-        if (!is_array($e)) {
-            continue;
-        }
-        $q = isset($e['question']) && is_array($e['question']) ? $e['question'] : array();
-        $name = isset($q['name']) ? rtrim((string) $q['name'], '.') : '';
-        $qtype = isset($q['type']) ? (string) $q['type'] : '';
-        $client = isset($e['client']) ? (string) $e['client'] : '';
-        $elapsed = isset($e['elapsedMs']) ? (string) $e['elapsedMs'] : '';
-        $cached = !empty($e['cached']);
-      ?>
-      <tr>
-        <td class="nowrap"><?= h(log_time($e['time'] ?? '')) ?></td>
-        <td class="host"><?= h($name !== '' ? $name : '—') ?></td>
-        <td><span class="tag"><?= h($qtype) ?></span></td>
-        <td class="ans"><?= h(log_answer($e['answer'] ?? array())) ?></td>
-        <td class="nowrap"><?= h($client !== '' ? $client : '—') ?></td>
-        <td class="num nowrap">
-          <?= h($elapsed !== '' ? $elapsed . ' ms' : '—') ?>
-          <?= $cached ? '<span class="tag soft">缓存</span>' : '' ?>
-        </td>
-      </tr>
-    <?php endforeach; ?>
-    </tbody>
-  </table>
-  </div>
-<?php endif; ?>
+<section class="card">
+  <p class="hint">
+    <?php if ($term !== ''): ?>
+      没有匹配「<?= h($term) ?>」的记录。
+    <?php else: ?>
+      还没有记录。设备用你的专属地址解析之后，这里就会出现。
+    <?php endif; ?>
+  </p>
 </section>
+<?php else: ?>
+<section class="log-list">
+  <?php foreach ($log as $e): ?>
+    <?php
+      if (!is_array($e)) {
+          continue;
+      }
+
+      $q = isset($e['question']) && is_array($e['question']) ? $e['question'] : array();
+      $name = isset($q['name']) ? rtrim((string) $q['name'], '.') : '';
+      $qtype = isset($q['type']) ? (string) $q['type'] : '';
+      $client = isset($e['client']) ? (string) $e['client'] : '';
+      $elapsed = isset($e['elapsedMs']) ? (string) $e['elapsedMs'] : '';
+      $cached_hit = !empty($e['cached']);
+      $ts = isset($e['time']) ? strtotime((string) $e['time']) : false;
+
+      // 结果压成一行
+      $answer = isset($e['answer']) && is_array($e['answer']) ? $e['answer'] : array();
+      $parts = array();
+      foreach (array_slice($answer, 0, 2) as $a) {
+          if (is_array($a) && isset($a['value'])) {
+              $parts[] = (string) $a['value'];
+          }
+      }
+      $ans = $parts === array() ? '' : implode('，', $parts);
+      if (count($answer) > 2) {
+          $ans .= ' 等 ' . count($answer) . ' 条';
+      }
+
+      // 上游
+      $up = '';
+      if (isset($e['upstream']) && is_string($e['upstream']) && $e['upstream'] !== '') {
+          $up = (string) $e['upstream'];
+      }
+
+      $blocked = ($qtype === '' && $ans === '') || $ans === '0.0.0.0' || $ans === '::';
+    ?>
+    <article class="log-item<?= $blocked ? ' blocked' : '' ?>">
+      <div class="log-top">
+        <span class="log-host"><?= h($name !== '' ? $name : '—') ?></span>
+        <span class="log-type"><?= h($qtype) ?></span>
+      </div>
+      <?php if ($ans !== ''): ?>
+        <div class="log-ans">→ <?= h($ans) ?></div>
+      <?php endif; ?>
+      <div class="log-foot">
+        <span class="log-time"><?= $ts !== false ? h(date('m-d H:i:s', $ts)) : '—' ?></span>
+        <?php if ($client !== ''): ?><span class="log-sep">·</span><span><?= h($client) ?></span><?php endif; ?>
+        <?php if ($elapsed !== ''): ?><span class="log-sep">·</span><span><?= h($elapsed) ?> ms</span><?php endif; ?>
+        <?php if ($cached_hit): ?><span class="tag tag-soft">缓存</span><?php endif; ?>
+        <?php if ($up !== ''): ?><span class="log-sep">·</span><span class="log-up"><?= h($up) ?></span><?php endif; ?>
+      </div>
+    </article>
+  <?php endforeach; ?>
+</section>
+<?php endif; ?>
