@@ -847,9 +847,11 @@ function describeFailure() {
 
   if (API_BASE && pageProto === "https" && apiProto === "http") {
     return "接口地址是明文 http，而本页是 https，浏览器会直接拦掉这个请求"
-      + "（混合内容）。两种解法：① 在本页所在的服务器上把 /portal/ 反代到"
-      + " AGHub，浏览器就只跟自己同源的后端说话，AGHub 那边不用改；"
-      + "② 给 AGHub 加 --web-tls-cert / --web-tls-key，让接口自己走 https。"
+      + "（混合内容）。最省事的做法是把 config.js 里的 apiBase 留空："
+      + "页面就只跟自己同源的后端说话——用门户包里自带的 PHP 后端，"
+      + "或者在本页所在的服务器上把 /portal/ 反代到 AGHub。两种都不用动"
+      + " AGHub，它那边 http 或 https 都行。只有让浏览器直接访问 AGHub 时"
+      + "才填这里，而且必须是 https 地址（--web-tls-cert / --web-tls-key）。"
       + "把前端改成 http 没有用：跨域的会话 cookie 带 Secure，明文下会被丢掉。";
   }
 
@@ -858,14 +860,15 @@ function describeFailure() {
       + " config.js 里把 apiBase 指向 AGHub。";
   }
 
-  return "连不上接口 " + API_BASE + "。按顺序排查："
-    + "① 在浏览器直接打开这个地址，看通不通（端口没放行、服务没起都会不通）；"
-    + "② 把本页来源 " + location.origin + " 加进管理端的「门户来源」，"
-    + "否则浏览器会拦下跨域请求；"
-    + "③ 接口用 https 时证书必须受浏览器信任。"
+    return "连不上接口 " + API_BASE + "。按顺序排查："
+      + "① 在浏览器直接打开这个地址，看通不通（端口没放行、服务没起都会不通）；"
+      + "② 把本页来源 " + location.origin + " 加进管理端的「门户来源」，"
+      + "否则浏览器会拦下跨域请求；"
+      + "③ 接口用 https 时证书必须受浏览器信任。"
       + "具体原因看浏览器控制台。"
-      + "另外，跨域直连要求 API 走 https；如果你在本页所在的服务器上把"
-      + " /portal/ 反代到 AGHub，就变成同源，这些问题都不会出现。";
+      + "另外，跨域直连要求 API 走 https；最省事的做法是把 apiBase 留空，"
+      + "用门户包里的 PHP 后端，或者把 /portal/ 反代到 AGHub——同源，"
+      + "这些问题都不会出现。";
 }
 
 function showNetAlert(msg) {
