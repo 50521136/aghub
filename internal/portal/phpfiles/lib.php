@@ -90,6 +90,164 @@ function aghub(string $method, string $path, ?array $body = null, string $sessio
     );
 }
 
+/**
+ * aghub_multi 并发调多个门户接口，返回 array(键 => 和 aghub() 一样的结构)。
+ *
+ * 逐个 curl 的话，用户要等三次往返相加；并发只要等最慢的那一个。门户每开一页
+ * 要问 AGHub 三四个接口，本地回环看不出来，跨机房就很明显 —— 站点在宝塔、
+ * AGHub 在西安这种部署，每次往返按 50ms 算，串行就是 150ms 白等。
+ *
+ * $reqs 形如 array(键 => array($method, $path, $body, $session))，后两项可省。
+ */
+function aghub_multi(array $reqs): array
+{
+    $out = array();
+    if ($reqs === array()) {
+        return $out;
+    }
+
+    $base = rtrim((string) cfg('aghub_url', ''), '/');
+    $timeout = (int) cfg('timeout', 10);
+    $verify = (bool) cfg('verify_tls', true);
+
+    $mh = curl_multi_init();
+    $handles = array();
+
+    foreach ($reqs as $key => $r) {
+        $method = (string) $r[0];
+        $path = (string) $r[1];
+        $body = isset($r[2]) ? $r[2] : null;
+        $session = isset($r[3]) ? (string) $r[3] : '';
+
+        $headers = array(
+            'Accept: application/json',
+            'X-Portal-Token: ' . (string) cfg('token', ''),
+        );
+        if ($session !== '') {
+            $headers[] = 'Authorization: Bearer ' . $session;
+        }
+
+        $opts = array(
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_SSL_VERIFYPEER => $verify,
+            CURLOPT_SSL_VERIFYHOST => $verify ? 2 : 0,
+        );
+
+        if ($body !== null) {
+            $headers[] = 'Content-Type: application/json';
+            $opts[CURLOPT_HTTPHEADER] = $headers;
+            $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE);
+        }
+
+        $ch = curl_init($base . $path);
+        curl_setopt_array($ch, $opts);
+        curl_multi_add_handle($mh, $ch);
+        $handles[$key] = $ch;
+    }
+
+    $running = null;
+    do {
+        $status = curl_multi_exec($mh, $running);
+        if ($running > 0) {
+            curl_multi_select($mh, 1.0);
+        }
+    } while ($running > 0 && $status === CURLM_OK);
+
+    foreach ($handles as $key => $ch) {
+        $raw = curl_multi_getcontent($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+
+        if ($raw === false || $raw === null || $raw === '') {
+            $out[$key] = array(
+                'ok' => false,
+                'status' => 0,
+                'error' => '连不上 AGHub（' . $base . '）：' . ($err !== '' ? $err : '未知错误'),
+                'data' => array(),
+            );
+        } else {
+            $data = json_decode((string) $raw, true);
+            if (!is_array($data)) {
+                $data = array();
+            }
+            $ok = $code >= 200 && $code < 300;
+            $out[$key] = array(
+                'ok' => $ok,
+                'status' => $code,
+                'error' => $ok ? '' : aghub_error_message($code, $data),
+                'data' => $data,
+            );
+        }
+
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+
+    curl_multi_close($mh);
+
+    return $out;
+}
+
+/** cache_item 取缓存里那条记录，没过期就返回，否则返回 null。 */
+function cache_item(string $key, int $ttl)
+{
+    if (!isset($_SESSION['cache'][$key])) {
+        return null;
+    }
+
+    $item = $_SESSION['cache'][$key];
+    if (!is_array($item) || !isset($item['at'])) {
+        return null;
+    }
+
+    if (time() - (int) $item['at'] > $ttl) {
+        unset($_SESSION['cache'][$key]);
+
+        return null;
+    }
+
+    return $item;
+}
+
+/**
+ * fetch_all 把一批接口一次取回来：命中缓存的直接用，没命中的并发去拿。
+ *
+ * $want 形如 array(键 => array($req, $ttl))，$req 是 aghub_multi 要的形状。
+ * 返回 array(键 => array('v','at','fresh'))。
+ */
+function fetch_all(array $want): array
+{
+    $out = array();
+    $miss = array();
+    $ttls = array();
+
+    foreach ($want as $key => $pair) {
+        $ttl = (int) $pair[1];
+        $ttls[$key] = $ttl;
+
+        $item = cache_item($key, $ttl);
+        if ($item !== null) {
+            $out[$key] = array('v' => $item['v'], 'at' => (int) $item['at'], 'fresh' => false);
+        } else {
+            $miss[$key] = $pair[0];
+        }
+    }
+
+    if ($miss !== array()) {
+        $got = aghub_multi($miss);
+        foreach ($got as $key => $v) {
+            cache_set($key, $v, $ttls[$key]);
+            $out[$key] = array('v' => $v, 'at' => time(), 'fresh' => true);
+        }
+    }
+
+    return $out;
+}
+
 /** aghub_error_message 把 AGHub 返回的错误变成一句人话。 */
 function aghub_error_message(int $code, array $data): string
 {

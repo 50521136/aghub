@@ -142,19 +142,38 @@ if (isset($_GET['fresh'])) {
 // ------------------------------------------------------------------ 取数据
 
 $logged = session_token() !== '';
+$session = session_token();
 
-// 公共统计：未登录也要看得到。缓存 20 秒，避免每次翻页都回源。
-$pub = cached('public', 20, function () {
-    return aghub('GET', '/portal/api/public');
-});
-$pub_r = $pub['v'];
+// 日志的查询条件（只有日志页才用得上）。
+$limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
+if ($limit < 20 || $limit > 200) {
+    $limit = 50;
+}
+$term = isset($_GET['term']) ? trim((string) $_GET['term']) : '';
+$log_q = '/portal/api/log?limit=' . $limit;
+if ($term !== '') {
+    $log_q .= '&term=' . rawurlencode($term);
+}
+
+// 一页要问 AGHub 的三四个接口一次发出去，不要串行等。
+// 缓存键带上日志的查询条件，换搜索词或条数就是另一次查询。
+$want = array(
+    'public' => array(array('GET', '/portal/api/public'), 20),
+    'config' => array(array('GET', '/portal/api/config'), 60),
+);
+if ($logged) {
+    $want['me'] = array(array('GET', '/portal/api/me', null, $session), 0);
+}
+if ($logged && $page === 'log') {
+    $want['log:' . md5($log_q)] = array(array('GET', $log_q, null, $session), 30);
+}
+
+$got = fetch_all($want);
+
+$pub_r = $got['public']['v'];
 $public = (is_array($pub_r) && !empty($pub_r['ok'])) ? $pub_r['data'] : array();
 
-// 站点配置（注册开关、公告）。缓存久一点，它几乎不变。
-$cfg_c = cached('config', 60, function () {
-    return aghub('GET', '/portal/api/config');
-});
-$cfg_r = $cfg_c['v'];
+$cfg_r = $got['config']['v'];
 $site = (is_array($cfg_r) && !empty($cfg_r['ok'])) ? $cfg_r['data'] : array();
 
 $user = array();
@@ -162,40 +181,22 @@ $log = array();
 $log_at = 0;
 $log_fresh = true;
 
-if ($logged) {
-    $me = aghub('GET', '/portal/api/me', null, session_token());
+if ($logged && isset($got['me'])) {
+    $me = $got['me']['v'];
 
-    if ($me['ok']) {
+    if (!empty($me['ok'])) {
         $user = isset($me['data']['user']) && is_array($me['data']['user']) ? $me['data']['user'] : array();
-    } elseif ($me['status'] === 401) {
+    } elseif ((int) $me['status'] === 401) {
         session_forget();
         $logged = false;
         $flash_error = '登录状态已失效，请重新登录。';
     } else {
-        $flash_error = $me['error'];
+        $flash_error = (string) $me['error'];
     }
 }
 
-// 日志：缓存 30 秒。翻来覆去开同一页不会再打 AGHub 一次。
-if ($logged && $page === 'log') {
-    $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 50;
-    if ($limit < 20 || $limit > 200) {
-        $limit = 50;
-    }
-
-    $term = isset($_GET['term']) ? trim((string) $_GET['term']) : '';
-
-    $session = session_token();
-    $q = '/portal/api/log?limit=' . $limit;
-    if ($term !== '') {
-        $q .= '&term=' . rawurlencode($term);
-    }
-
-    // 缓存键带上条件，换搜索词或条数就是另一次查询。
-    $c = cached('log:' . md5($q), 30, function () use ($q, $session) {
-        return aghub('GET', $q, null, $session);
-    });
-
+if ($logged && $page === 'log' && isset($got['log:' . md5($log_q)])) {
+    $c = $got['log:' . md5($log_q)];
     $r = $c['v'];
     $log_at = (int) $c['at'];
     $log_fresh = (bool) $c['fresh'];
@@ -203,7 +204,7 @@ if ($logged && $page === 'log') {
     if (is_array($r) && !empty($r['ok'])) {
         $log = isset($r['data']['data']) && is_array($r['data']['data']) ? $r['data']['data'] : array();
     } elseif (is_array($r)) {
-        $flash_error = $r['error'];
+        $flash_error = (string) $r['error'];
     }
 }
 
