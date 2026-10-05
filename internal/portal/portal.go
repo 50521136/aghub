@@ -86,6 +86,17 @@ type UserStore interface {
 	// does not have to restart AGHub after changing them.
 	GetSettings() (s *users.Settings)
 
+	// EnsurePortalToken returns the portal deployment token, generating one
+	// when there is none.  The package handler calls it, so that building a
+	// package always produces a front-end that can actually talk to AGHub.
+	EnsurePortalToken() (tok string, err error)
+
+	// CheckPortalToken reports whether tok is the current portal deployment
+	// token.  The front-end sends it on every call; it replaces the origin
+	// allow-list, because a header works over http and https from any origin
+	// while a cross-origin cookie does not.
+	CheckPortalToken(tok string) (ok bool)
+
 	// Summary returns the aggregate state of all accounts.  The public page
 	// shows it to visitors who have not signed in, so it must not carry
 	// anything about an individual account.

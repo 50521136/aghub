@@ -9,6 +9,7 @@ package users
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -269,6 +270,18 @@ type Settings struct {
 	// can use the portal, which is the safest default.  It is not related to
 	// users; it lives here because this is the AGHub-wide settings store.
 	PortalOrigins []string `json:"portal_origins,omitempty"`
+
+	// PortalToken is the deployment token of the portal front-end.  It is
+	// generated once and baked into the deployment package; the front-end
+	// sends it in the X-Portal-Token header on every call.
+	//
+	// It replaces the origin allow-list.  A token travels in a header rather
+	// than a cookie, so there is nothing for the browser to refuse: no
+	// SameSite, no Secure, no origin to register, and the same front-end works
+	// over http and https.  It is not a credential for any account -- it only
+	// says "this call comes from the portal deployment the administrator
+	// built", and the portal users still sign in with their own passwords.
+	PortalToken string `json:"portal_token,omitempty"`
 
 	// PortalAPIBase is the address of the portal API as the browser reaches
 	// it, for example "https://dns.example.com:3004".  It is baked into the
@@ -1245,6 +1258,68 @@ func (m *Manager) SetSettings(s *Settings) (err error) {
 }
 
 // isPlainHTTP reports whether raw is an http:// URL.
+// PortalTokenLength is the length of the portal deployment token in hex
+// characters.
+const PortalTokenLength = 32
+
+// EnsurePortalToken returns the portal deployment token, generating and storing
+// one when there is none yet.
+func (m *Manager) EnsurePortalToken() (tok string, err error) {
+	if cur := m.GetSettings(); cur.PortalToken != "" {
+		return cur.PortalToken, nil
+	}
+
+	raw := make([]byte, PortalTokenLength/2)
+	_, err = rand.Read(raw)
+	if err != nil {
+		return "", fmt.Errorf("users: generating the portal token: %w", err)
+	}
+
+	tok = hex.EncodeToString(raw)
+
+	s := *m.GetSettings()
+	s.PortalToken = tok
+	m.settings.Store(&s)
+	m.dirty.Store(true)
+
+	m.logger.Info("portal deployment token generated")
+
+	return tok, nil
+}
+
+// RotatePortalToken replaces the portal deployment token with a new one.  The
+// previously downloaded front-end stops working, which is the point: it is how
+// a leaked deployment package is cut off.
+func (m *Manager) RotatePortalToken() (tok string, err error) {
+	raw := make([]byte, PortalTokenLength/2)
+	_, err = rand.Read(raw)
+	if err != nil {
+		return "", fmt.Errorf("users: generating the portal token: %w", err)
+	}
+
+	tok = hex.EncodeToString(raw)
+
+	s := *m.GetSettings()
+	s.PortalToken = tok
+	m.settings.Store(&s)
+	m.dirty.Store(true)
+
+	m.logger.Info("portal deployment token rotated")
+
+	return tok, nil
+}
+
+// CheckPortalToken reports whether tok is the current portal deployment token.
+func (m *Manager) CheckPortalToken(tok string) (ok bool) {
+	if tok == "" {
+		return false
+	}
+
+	cur := m.GetSettings().PortalToken
+
+	return cur != "" && subtle.ConstantTimeCompare([]byte(cur), []byte(tok)) == 1
+}
+
 // SettingsWarning describes a settings combination that is almost certainly a
 // deployment mistake, or returns an empty string when there is nothing to say.
 //

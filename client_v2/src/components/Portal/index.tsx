@@ -9,16 +9,9 @@ import { Switch } from 'panel/common/controls/Switch';
 import { Textarea } from 'panel/common/controls/Textarea';
 import { portalMailTest } from 'panel/api/generated';
 import { addErrorToast, addSuccessToast } from 'panel/stores/toasts';
-import { downloadPortalPackage, getUsers, saveSettings, usersState } from 'panel/stores/users';
+import { downloadPortalPackage, getUsers, rotatePortalToken, saveSettings, usersState } from 'panel/stores/users';
 
 import s from './Portal.module.pcss';
-
-/** toLines splits a textarea value into trimmed non-empty lines. */
-const toLines = (value: string): string[] =>
-    value
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
 
 /** toCount parses a number field, treating anything unusable as zero. */
 const toCount = (value: string): number => {
@@ -35,7 +28,7 @@ export const Portal = () => {
     const [announcement, setAnnouncement] = createSignal('');
 
     const [apiBase, setApiBase] = createSignal('');
-    const [origins, setOrigins] = createSignal('');
+    const [token, setToken] = createSignal('');
 
     const [smtpHost, setSmtpHost] = createSignal('');
     const [smtpPort, setSmtpPort] = createSignal('');
@@ -59,7 +52,7 @@ export const Portal = () => {
         setAnnouncement(c.portal_announcement ?? '');
 
         setApiBase(c.portal_api_base ?? '');
-        setOrigins((c.portal_origins ?? []).join('\n'));
+        setToken(c.portal_token ?? '');
 
         setSmtpHost(c.smtp_host ?? '');
         setSmtpPort(c.smtp_port ? String(c.smtp_port) : '');
@@ -84,7 +77,9 @@ export const Portal = () => {
             portal_default_days: toCount(days()),
             portal_announcement: announcement(),
             portal_api_base: apiBase().trim(),
-            portal_origins: toLines(origins()),
+            // 对接令牌由 AGHub 生成，不由表单提交：前端包里的 token 必须和
+            // 服务端一致，能改的话一次误操作就让所有已部署的前端失效。
+
             smtp_host: smtpHost().trim(),
             smtp_port: toCount(smtpPort()),
             smtp_user: smtpUser().trim(),
@@ -256,13 +251,22 @@ export const Portal = () => {
                 />
                 <p class={cnHint()}>{intl.getMessage('portal_api_base_hint')}</p>
 
-                <Textarea
-                    label={intl.getMessage('portal_origins')}
-                    value={origins()}
-                    onInput={(e) => setOrigins(e.currentTarget.value)}
-                    data-testid="portal-origins"
+                <Input
+                    label={intl.getMessage('portal_token')}
+                    value={token()}
+                    readOnly
+                    data-testid="portal-token"
                 />
-                <p class={cnHint()}>{intl.getMessage('portal_origins_hint')}</p>
+                <p class={cnHint()}>{intl.getMessage('portal_token_hint')}</p>
+
+                <Button
+                    variant="secondary"
+                    disabled={usersState.processingSave}
+                    onClick={() => void rotatePortalToken().then((t) => setToken(t))}
+                    data-testid="portal-token-rotate"
+                >
+                    {intl.getMessage('portal_token_rotate')}
+                </Button>
 
                 <Button
                     variant="secondary"

@@ -37,7 +37,7 @@ func filesOf(tb testing.TB, b []byte) (files map[string]string) {
 func TestPackage(t *testing.T) {
 	const apiBase = "https://dns.example.com:3004"
 
-	b, err := Package(apiBase, []string{"https://portal.example.com"})
+	b, err := Package(apiBase, "tok123", []string{"https://portal.example.com"})
 	require.NoError(t, err)
 	require.NotEmpty(t, b)
 
@@ -53,24 +53,26 @@ func TestPackage(t *testing.T) {
 	assert.Contains(t, files["index.html"], "AGHUB_PORTAL_CONFIG")
 
 	// The note names the origins the administrator has to match.
-	assert.Contains(t, files[readmeFileName], "https://portal.example.com")
+	// The token is what replaces the origin allow-list, so the note has to
+	// carry it rather than a list of origins.
+	assert.Contains(t, files[readmeFileName], "X-Portal-Token")
 }
 
 func TestPackageWithoutAnAddress(t *testing.T) {
-	b, err := Package("", nil)
+	b, err := Package("", "tok123", nil)
 	require.NoError(t, err)
 
 	files := filesOf(t, b)
 
 	// An empty address means the front-end talks to its own origin, which the
 	// page treats as the default.
-	assert.Contains(t, files[configFileName], `apiBase: ""`)
+	assert.Contains(t, files[configFileName], `api: ""`)
 
-	// Without origins the note has to say that the list is still empty,
-	// otherwise the administrator never learns why the browser refuses the
-	// requests.
-	assert.Contains(t, files[readmeFileName], "门户来源")
-	assert.Contains(t, files[readmeFileName], "没有配置")
+	// With no API address the note has to say the front-end will call its own
+	// origin, and that the pairing token is what lets it reach AGHub from
+	// there -- otherwise the administrator has no idea why it works.
+	assert.Contains(t, files[readmeFileName], "与页面同源")
+	assert.Contains(t, files[readmeFileName], "X-Portal-Token")
 }
 
 // TestPackageShipsThePHPBackEnd checks that the PHP back-end travels with the
@@ -82,7 +84,7 @@ func TestPackageWithoutAnAddress(t *testing.T) {
 // package is the difference between "read the docs and go find a script" and
 // "unzip and it works".
 func TestPackageShipsThePHPBackEnd(t *testing.T) {
-	b, err := Package("https://api.example.com", nil)
+	b, err := Package("https://api.example.com", "tok123", nil)
 	require.NoError(t, err)
 
 	files := filesOf(t, b)
@@ -111,7 +113,7 @@ func TestPackageShipsThePHPBackEnd(t *testing.T) {
 // used to describe only the TLS route, which sent those deployments down a
 // path they did not need.
 func TestReadmeLeadsWithTheProxy(t *testing.T) {
-	b, err := Package("", nil)
+	b, err := Package("", "tok123", nil)
 	require.NoError(t, err)
 
 	note := filesOf(t, b)[readmeFileName]
@@ -132,12 +134,12 @@ func TestPackageEscapesTheAddress(t *testing.T) {
 	// string literal.  A quote must not be able to end it early.
 	const apiBase = `https://x.example/";alert(1);//`
 
-	b, err := Package(apiBase, nil)
+	b, err := Package(apiBase, "tok123", nil)
 	require.NoError(t, err)
 
 	config := filesOf(t, b)[configFileName]
 
 	// The quote must be backslash-escaped, so the literal ends where the
 	// generator says it does and not where the address says it does.
-	assert.Contains(t, config, `apiBase: "https://x.example/\";alert(1);//",`)
+	assert.Contains(t, config, `api: "https://x.example/\";alert(1);//",`)
 }

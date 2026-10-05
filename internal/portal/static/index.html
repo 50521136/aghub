@@ -824,11 +824,18 @@ a:hover { text-decoration: underline; }
 <script>
 "use strict";
 
-// API_BASE 留空表示与页面同源。独立部署（前端在国外、API 在国内）时由
-// config.js 提供国内 API 的地址，例如 "https://dns.example.com:3004"。
-// 同时必须把该页面的来源加进管理端设置里的「门户来源」，否则浏览器会拦下
-// 跨域请求。
-var API_BASE = (window.AGHUB_PORTAL_CONFIG && window.AGHUB_PORTAL_CONFIG.apiBase) || "";
+// config.js 由管理端在打包时生成，里面有两项：
+//
+//   api   —— AGHub 的地址，浏览器能访问到的那个。留空表示与页面同源。
+//   token —— 对接令牌，每次请求都带在 X-Portal-Token 头上。
+//
+// token 不是账号凭据：它只说明"这次调用来自管理员打包的这份前端"，用户仍然
+// 用自己的密码登录。之所以用头而不是 cookie，是因为跨来源的 cookie 必须带
+// SameSite=None，而它又必须带 Secure，明文 HTTP 下浏览器会直接丢掉——用头就
+// 没有这些问题，http 和 https 都能用，也不需要登记来源。
+var CFG = window.AGHUB_PORTAL_CONFIG || {};
+var API_BASE = CFG.api || CFG.apiBase || "";
+var PORTAL_TOKEN = CFG.token || "";
 
 // 地址末尾的斜杠会让拼接出的路径变成 "//portal/api/…"，服务端会 404。
 if (API_BASE.slice(-1) === "/") {
@@ -839,6 +846,20 @@ var PAGE_SIZE = 100;
 var MAX_KEPT = 1000;
 var HISTORY_DAYS = 30;
 
+// 会话放在 localStorage 里，请求时带 Authorization 头。
+var SESSION_KEY = "aghub_portal_session";
+
+function session() {
+  try { return window.localStorage.getItem(SESSION_KEY) || ""; } catch (e) { return ""; }
+}
+
+function setSession(tok) {
+  try {
+    if (tok) { window.localStorage.setItem(SESSION_KEY, tok); }
+    else { window.localStorage.removeItem(SESSION_KEY); }
+  } catch (e) { /* 隐私模式下不可写，退回到 cookie 会话 */ }
+}
+
 var $ = function (id) { return document.getElementById(id); };
 
 function describeFailure() {
@@ -847,28 +868,22 @@ function describeFailure() {
 
   if (API_BASE && pageProto === "https" && apiProto === "http") {
     return "接口地址是明文 http，而本页是 https，浏览器会直接拦掉这个请求"
-      + "（混合内容）。最省事的做法是把 config.js 里的 apiBase 留空："
-      + "页面就只跟自己同源的后端说话——用门户包里自带的 PHP 后端，"
-      + "或者在本页所在的服务器上把 /portal/ 反代到 AGHub。两种都不用动"
-      + " AGHub，它那边 http 或 https 都行。只有让浏览器直接访问 AGHub 时"
-      + "才填这里，而且必须是 https 地址（--web-tls-cert / --web-tls-key）。"
-      + "把前端改成 http 没有用：跨域的会话 cookie 带 Secure，明文下会被丢掉。";
+      + "（混合内容）。这是浏览器规则，跟认证方式无关。两种办法："
+      + "① 把 api 改成 https 地址（AGHub 加 --web-tls-cert / --web-tls-key）；"
+      + "② 在宝塔里把 /portal/ 反代到 AGHub，api 留空走同源，AGHub 就不用动。";
   }
 
   if (!API_BASE) {
-    return "页面在请求自己的地址，但接口不在这个地址上。独立部署的前端需要在"
-      + " config.js 里把 apiBase 指向 AGHub。";
+    return "页面在请求自己的地址，但那里没有接口。要么在 config.js 里把 api "
+      + "指向 AGHub，要么在宝塔里把 /portal/ 反代到 AGHub。";
   }
 
-    return "连不上接口 " + API_BASE + "。按顺序排查："
-      + "① 在浏览器直接打开这个地址，看通不通（端口没放行、服务没起都会不通）；"
-      + "② 把本页来源 " + location.origin + " 加进管理端的「门户来源」，"
-      + "否则浏览器会拦下跨域请求；"
-      + "③ 接口用 https 时证书必须受浏览器信任。"
-      + "具体原因看浏览器控制台。"
-      + "另外，跨域直连要求 API 走 https；最省事的做法是把 apiBase 留空，"
-      + "用门户包里的 PHP 后端，或者把 /portal/ 反代到 AGHub——同源，"
-      + "这些问题都不会出现。";
+  return "连不上接口 " + API_BASE + "。按顺序排查："
+    + "① 在浏览器直接打开 " + API_BASE + "/portal/api/public 看通不通"
+    + "（端口没放行、服务没起都会不通）；"
+    + "② 接口用 https 时证书必须受浏览器信任；"
+    + "③ 检查 config.js 里的 token 是不是这一份包里的。"
+    + "具体原因看浏览器控制台。";
 }
 
 function showNetAlert(msg) {
@@ -883,10 +898,18 @@ function clearNetAlert() {
 
 function api(path, opts) {
   opts = opts || {};
+
+  var headers = {};
+  if (opts.body) { headers["Content-Type"] = "application/json"; }
+  if (PORTAL_TOKEN) { headers["X-Portal-Token"] = PORTAL_TOKEN; }
+  if (session()) { headers["Authorization"] = "Bearer " + session(); }
+
   return fetch(API_BASE + path, {
     method: opts.method || "GET",
-    headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+    headers: headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
+    // 同源部署（AGHub 自己提供门户）仍然靠 cookie 会话，所以这里带上凭据；
+    // 跨来源时靠 Authorization 头，cookie 有没有都不影响。
     credentials: "include",
     cache: "no-store",
   }).then(function (r) {
@@ -1550,6 +1573,9 @@ $("login-form").addEventListener("submit", function (e) {
     throw new Error("登录失败（HTTP " + r.status + "）");
   }).then(function (d) {
     $("login-pass").value = "";
+    // 会话令牌存起来，后续请求带 Authorization 头。跨来源部署靠它，
+    // 不依赖 cookie，所以明文 http 也能用。
+    if (d.token) { setSession(d.token); }
     showPanel();
     showTab("report");
     renderUser(d.user);
@@ -1563,6 +1589,7 @@ $("login-form").addEventListener("submit", function (e) {
 
 $("logout-btn").addEventListener("click", function () {
   api("/portal/api/logout", { method: "POST" }).finally(function () {
+    setSession("");
     log = [];
     showPublic();
     loadPublic();

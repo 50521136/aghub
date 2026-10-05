@@ -24,6 +24,7 @@ import type {
     UsersSummary,
 } from 'panel/api/model';
 
+import { customFetch } from 'panel/api/customFetch';
 import intl from 'panel/common/intl';
 import { addErrorToast, addSuccessToast } from './toasts';
 
@@ -104,6 +105,30 @@ export const saveSettings = async (settings: UserSettings): Promise<boolean> => 
         setState('processingSave', false);
 
         return false;
+    }
+};
+
+// rotatePortalToken replaces the portal deployment token.  The front-end built
+// from the previous token stops working, which is how a leaked deployment
+// package is cut off.
+export const rotatePortalToken = async (): Promise<string> => {
+    setState('processingSave', true);
+
+    try {
+        const data = await customFetch<{ token: string }>('control/users/portal-token', {
+            method: 'POST',
+        });
+
+        await getUsers();
+        setState('processingSave', false);
+        addSuccessToast(intl.getMessage('portal_token_rotated'));
+
+        return data.token || '';
+    } catch (error) {
+        addErrorToast({ error });
+        setState('processingSave', false);
+
+        return '';
     }
 };
 

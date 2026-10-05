@@ -34,7 +34,7 @@ const (
 //
 // The package is built from the front-end embedded into the binary, so it
 // needs no build step and always matches the running version.
-func Package(apiBase string, origins []string) (b []byte, err error) {
+func Package(apiBase, token string, origins []string) (b []byte, err error) {
 	sub, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return nil, fmt.Errorf("portal: getting the static subdirectory: %w", err)
@@ -60,7 +60,7 @@ func Package(apiBase string, origins []string) (b []byte, err error) {
 		}
 
 		if path == configFileName {
-			data = configJS(apiBase)
+			data = configJS(apiBase, token)
 		}
 
 		return writeZipFile(zw, path, data)
@@ -135,18 +135,33 @@ func writeZipFile(zw *zip.Writer, name string, data []byte) (err error) {
 }
 
 // configJS renders the configuration file of the front-end.
-func configJS(apiBase string) (b []byte) {
-	// The address is written as a JSON string, which is also a valid
-	// JavaScript one.  Quoting it keeps a stray quote in the address from
-	// breaking the page.
+func configJS(apiBase, token string) (b []byte) {
+	// The address and the token are written as JSON strings, which are also
+	// valid JavaScript ones.  Quoting them keeps a stray quote from breaking
+	// the page.
 	return []byte(fmt.Sprintf(
 		"// 由 AGHub 管理端生成，重新打包会覆盖这个文件。\n"+
+			"//\n"+
+			"// api：AGHub 的地址，浏览器能访问到的那个。留空表示与页面同源。\n"+
+			"// token：对接令牌。前端每次请求都带在 X-Portal-Token 头上，\n"+
+			"//        用来确认调用来自你打包的这份前端。它不是账号凭据，\n"+
+			"//        用户仍然用自己的密码登录。\n"+
 			"window.AGHUB_PORTAL_CONFIG = {\n"+
-			"  // 留空表示与页面同源。\n"+
-			"  apiBase: %s,\n"+
+			"  api: %s,\n"+
+			"  token: %s,\n"+
 			"};\n",
 		quoteJS(apiBase),
+		quoteJS(token),
 	))
+}
+
+// apiBaseForNote renders the API address for the deployment note.
+func apiBaseForNote(apiBase string) (s string) {
+	if apiBase == "" {
+		return "（空，与页面同源）"
+	}
+
+	return apiBase
 }
 
 // quoteJS quotes s as a JavaScript string literal.
@@ -186,6 +201,16 @@ func readme(apiBase string, origins []string) (b []byte) {
 	sb.WriteString("AGHub 门户前端部署包\n")
 	sb.WriteString("====================\n\n")
 	sb.WriteString("这个目录是完整的门户前端（纯静态），另外带一个可选的 PHP 后端。\n\n")
+	sb.WriteString("config.js 里已经填好了两样东西，不用你改：\n\n")
+	sb.WriteString("    api     AGHub 的地址（浏览器能访问到的那个）\n")
+	sb.WriteString("    token   对接令牌\n\n")
+	sb.WriteString("token 是这次新加的。前端每次请求都带在 X-Portal-Token 头上，\n")
+	sb.WriteString("用来确认调用来自你打包的这份前端。它不是账号凭据——用户仍然用\n")
+	sb.WriteString("自己的密码登录。用头而不是 cookie，是因为跨来源的 cookie 必须带\n")
+	sb.WriteString("SameSite=None，而它又必须带 Secure，明文 HTTP 下浏览器会直接丢掉。\n")
+	sb.WriteString("用头就没有这些问题：http 和 https 都能用，也不用登记来源。\n\n")
+	sb.WriteString("所以现在不需要配「门户来源」了。万一这份包泄露，去管理端点一下\n")
+	sb.WriteString("「重新生成令牌」，之前打包出去的前端会立刻失效。\n\n")
 
 	sb.WriteString("先读这一段：浏览器发出的明文 HTTP 请求会被拦掉\n")
 	sb.WriteString("------------------------------------------------\n\n")
@@ -217,7 +242,7 @@ func readme(apiBase string, origins []string) (b []byte) {
 	sb.WriteString("    <站点目录>/portal/index.php        php/index.php\n")
 	sb.WriteString("    <站点目录>/portal/config.php       php/config.sample.php 复制而来\n")
 	sb.WriteString("    <站点目录>/portal/index.html       本目录的 index.html\n")
-	sb.WriteString("    <站点目录>/portal/config.js        本目录的 config.js（apiBase 留空）\n\n")
+	sb.WriteString("    <站点目录>/portal/config.js        本目录的 config.js（不用改）\n\n")
 	sb.WriteString("浏览器只跟 PHP 说话（同源），PHP 再去调 AGHub。这一跳是服务端到\n")
 	sb.WriteString("服务端的，不受浏览器策略约束，所以 AGHub 那边 http 还是 https 都行，\n")
 	sb.WriteString("也不用配「门户来源」。nginx 和 Apache 的配置见 php/README.md。\n\n")
@@ -233,32 +258,8 @@ func readme(apiBase string, origins []string) (b []byte) {
 
 	sb.WriteString("本包的配置\n")
 	sb.WriteString("----------\n\n")
-
-	if apiBase == "" {
-		sb.WriteString("config.js 里的 apiBase 是空的，表示前端与 API 同源 —— 这正是上面\n")
-		sb.WriteString("推荐的用法，配合反代即可。只有在你选择「浏览器直接访问 AGHub」时\n")
-		sb.WriteString("才需要回到管理端的「门户部署」填上 API 地址并重新下载这个包。\n\n")
-	} else {
-		sb.WriteString("config.js 里的 apiBase 已经指向：\n")
-		sb.WriteString("    " + apiBase + "\n")
-		sb.WriteString("这属于「浏览器直接访问 AGHub」，该地址必须是 https，且下面的来源\n")
-		sb.WriteString("必须匹配。\n\n")
-	}
-
-	if len(origins) == 0 {
-		sb.WriteString("「门户来源」没有配置。同源部署（反代）不需要它；如果你要让浏览器\n")
-		sb.WriteString("跨域直连 AGHub，请把本页面的来源填进管理端「设置 → 门户来源」：\n")
-		sb.WriteString("    https://你的前端域名\n\n")
-	} else {
-		sb.WriteString("管理端配置的「门户来源」是：\n")
-		for _, o := range origins {
-			sb.WriteString("    " + o + "\n")
-		}
-		sb.WriteString("跨域直连时页面必须部署在其中一个来源上，否则浏览器会拦下请求。\n")
-		sb.WriteString("同源部署（反代）用不到这个配置。\n\n")
-	}
-
-	sb.WriteString("页面本身没有任何配置项，改地址请改 config.js 里的 apiBase。\n")
-
+	sb.WriteString("config.js 里的 api 已经指向：\n")
+	sb.WriteString("    " + apiBaseForNote(apiBase) + "\n")
+	sb.WriteString("token 已经填好，不用动。改地址请改 config.js 里的 api。\n")
 	return []byte(sb.String())
 }

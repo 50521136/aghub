@@ -63,7 +63,16 @@ func (m *Manager) handlePackage(w http.ResponseWriter, r *http.Request) {
 
 	s := m.users.GetSettings()
 
-	b, err := Package(s.PortalAPIBase, s.PortalOrigins)
+	// The package is useless without a token, so make sure one exists before
+	// building it.  The administrator never has to generate it by hand.
+	tok, err := m.users.EnsurePortalToken()
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
+
+		return
+	}
+
+	b, err := Package(s.PortalAPIBase, tok, s.PortalOrigins)
 	if err != nil {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
 
@@ -98,6 +107,22 @@ func (m *Manager) allowedOrigin(r *http.Request) (origin string) {
 		return ""
 	}
 
+	// A preflight cannot carry a custom header, so the deployment token cannot
+	// be checked here.  Answering it reveals nothing: the request it precedes
+	// still has to present a valid token, or it is refused without any data.
+	if r.Method == http.MethodOptions {
+		return origin
+	}
+
+	// The deployment token is the modern way in.  It is baked into the package
+	// the administrator builds, so a front-end served from anywhere works
+	// without an origin to register.
+	if m.users.CheckPortalToken(portalTokenOf(r)) {
+		return origin
+	}
+
+	// The origin allow-list is kept for deployments configured before the
+	// token existed.
 	for _, allowed := range normalizeOrigins(m.users.GetSettings().PortalOrigins) {
 		if allowed == origin {
 			return origin
@@ -105,6 +130,21 @@ func (m *Manager) allowedOrigin(r *http.Request) (origin string) {
 	}
 
 	return ""
+}
+
+// portalTokenOf returns the deployment token of the request, taken from the
+// X-Portal-Token header or the token query parameter.
+//
+// The header is the normal way.  The query parameter exists for a front-end
+// that cannot set headers -- a plain <img> or a redirect -- and because the
+// token is not a credential for any account, putting it in a URL costs
+// nothing beyond the log line.
+func portalTokenOf(r *http.Request) (tok string) {
+	if tok = strings.TrimSpace(r.Header.Get("X-Portal-Token")); tok != "" {
+		return tok
+	}
+
+	return strings.TrimSpace(r.URL.Query().Get("token"))
 }
 
 // normalizeOrigins reduces the configured origins to their scheme and host and
@@ -145,7 +185,7 @@ func (m *Manager) handleCORS(w http.ResponseWriter, r *http.Request) (answered b
 	h.Set("Access-Control-Allow-Origin", origin)
 	h.Set("Access-Control-Allow-Credentials", "true")
 	h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	h.Set("Access-Control-Allow-Headers", "Content-Type")
+	h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Portal-Token")
 	h.Set("Access-Control-Max-Age", "600")
 	h.Add("Vary", "Origin")
 
@@ -226,19 +266,42 @@ func (m *Manager) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 // sessionToken returns the token of the request, or the zero token when the
 // request carries no usable one.
 func (m *Manager) sessionToken(r *http.Request) (tok aghuser.SessionToken) {
-	c, err := r.Cookie(SessionCookieName)
-	if err != nil || c.Value == "" {
+	raw := bearerToken(r)
+	if raw == "" {
+		// Fall back to the cookie, which is what a page served by AGHub
+		// itself uses.
+		c, err := r.Cookie(SessionCookieName)
+		if err != nil || c.Value == "" {
+			return tok
+		}
+
+		raw = c.Value
+	}
+
+	decoded, err := hex.DecodeString(raw)
+	if err != nil || len(decoded) != aghuser.SessionTokenLength {
 		return tok
 	}
 
-	raw, err := hex.DecodeString(c.Value)
-	if err != nil || len(raw) != aghuser.SessionTokenLength {
-		return tok
-	}
-
-	copy(tok[:], raw)
+	copy(tok[:], decoded)
 
 	return tok
+}
+
+// bearerToken returns the hex session token from the Authorization header, or
+// an empty string.
+func bearerToken(r *http.Request) (tok string) {
+	raw := strings.TrimSpace(r.Header.Get("Authorization"))
+	if raw == "" {
+		return ""
+	}
+
+	const prefix = "Bearer "
+	if len(raw) > len(prefix) && strings.EqualFold(raw[:len(prefix)], prefix) {
+		return strings.TrimSpace(raw[len(prefix):])
+	}
+
+	return ""
 }
 
 // isZeroToken reports whether tok is the zero token.
@@ -274,6 +337,17 @@ type loginRequest struct {
 type loginResponse struct {
 	// User is the account of the signed-in user.
 	User *Info `json:"user"`
+
+	// Token is the session token, hex encoded.  A front-end that is served
+	// from another origin keeps it and sends it back in the Authorization
+	// header; the cookie is set as well, so the same API works for a page
+	// served by AGHub itself.
+	//
+	// A token rather than only a cookie, because a cross-origin cookie has to
+	// be SameSite=None, which browsers accept only with Secure, which a plain
+	// HTTP response cannot set.  A header carries no such baggage: it works
+	// over http and https, from any origin, with no cookie flags to get right.
+	Token string `json:"token"`
 }
 
 // handleLogin implements POST /portal/api/login.
@@ -305,7 +379,10 @@ func (m *Manager) handleLogin(w http.ResponseWriter, r *http.Request) {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
 	default:
 		m.setSessionCookie(w, r, s)
-		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{User: m.InfoForRequest(ctx, r, s.User)})
+		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{
+			User:  m.InfoForRequest(ctx, r, s.User),
+			Token: hex.EncodeToString(s.Token[:]),
+		})
 	}
 }
 

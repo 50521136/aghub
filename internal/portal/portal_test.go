@@ -38,6 +38,9 @@ var testLogger = slogutil.NewDiscardLogger()
 
 // testUserStore is a fake [UserStore].
 type testUserStore struct {
+	// portalToken is the deployment token the fake store accepts.
+	portalToken string
+
 	// defs maps the user UIDs to the users.
 	defs map[string]*users.User
 
@@ -56,6 +59,18 @@ type testUserStore struct {
 }
 
 // Summary implements the [UserStore] interface.
+func (s *testUserStore) EnsurePortalToken() (tok string, err error) {
+	if s.portalToken == "" {
+		s.portalToken = "0123456789abcdef0123456789abcdef"
+	}
+
+	return s.portalToken, nil
+}
+
+func (s *testUserStore) CheckPortalToken(tok string) (ok bool) {
+	return s.portalToken != "" && tok == s.portalToken
+}
+
 func (s *testUserStore) Summary() (sum *users.Summary) {
 	if s.summary == nil {
 		return &users.Summary{}

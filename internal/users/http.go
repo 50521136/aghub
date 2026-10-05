@@ -121,6 +121,30 @@ type importReq struct {
 	Replace bool `json:"replace"`
 }
 
+// portalTokenResp is the response of the POST /control/users/portal-token HTTP
+// API.
+type portalTokenResp struct {
+	// Token is the new portal deployment token.
+	Token string `json:"token"`
+}
+
+// handleRotatePortalToken is the handler for the POST
+// /control/users/portal-token HTTP API.  It replaces the deployment token, so
+// that a front-end built earlier stops working -- which is how a leaked
+// deployment package is cut off.
+func (m *Manager) handleRotatePortalToken(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tok, err := m.RotatePortalToken()
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusInternalServerError, "%s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &portalTokenResp{Token: tok})
+}
+
 // settingsResp is the response of the GET /control/users/settings HTTP API.
 type settingsResp struct {
 	// Settings is the manager-wide configuration.
@@ -152,6 +176,7 @@ func (m *Manager) RegisterWebHandlers(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/control/users/list", m.handleList)
 	reg.Register(http.MethodGet, "/control/users/export", m.handleExport)
 	reg.Register(http.MethodPost, "/control/users/settings", m.handleSetSettings)
+	reg.Register(http.MethodPost, "/control/users/portal-token", m.handleRotatePortalToken)
 	reg.Register(http.MethodPost, "/control/users/add", m.handleAdd)
 	reg.Register(http.MethodPost, "/control/users/update", m.handleUpdate)
 	reg.Register(http.MethodPost, "/control/users/delete", m.handleDelete)
