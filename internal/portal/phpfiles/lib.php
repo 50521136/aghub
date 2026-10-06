@@ -34,9 +34,13 @@ function aghub(string $method, string $path, ?array $body = null, string $sessio
 {
     $url = rtrim((string) cfg('aghub_url', ''), '/') . $path;
 
+    // 门户是从服务器这边去调 AGHub 的，AGHub 看到的地址是这台 Web 服务器。把
+    // 访客真实的地址和 UA 一起转发过去，面板里的「连接情况」才不会写成服务器自己。
     $headers = array(
         'Accept: application/json',
         'X-Portal-Token: ' . (string) cfg('token', ''),
+        'X-Portal-Client-IP: ' . client_ip(),
+        'X-Portal-Client-UA: ' . visitor_ua(),
     );
 
     if ($session !== '') {
@@ -126,6 +130,8 @@ function aghub_multi(array $reqs): array
         $headers = array(
             'Accept: application/json',
             'X-Portal-Token: ' . (string) cfg('token', ''),
+            'X-Portal-Client-IP: ' . client_ip(),
+            'X-Portal-Client-UA: ' . visitor_ua(),
         );
         if ($session !== '') {
             $headers[] = 'Authorization: Bearer ' . $session;
@@ -415,6 +421,17 @@ function client_ip(): string
     }
 
     return isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+}
+
+/**
+ * visitor_ua 取访问者的 UA，只留可打印 ASCII。它要当 HTTP 头转发出去，非 ASCII
+ * 字节会让 cURL 直接拒绝发请求。
+ */
+function visitor_ua(): string
+{
+    $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+
+    return (string) preg_replace('/[^\x20-\x7E]/', '', $ua);
 }
 
 /** ip_is_v6 判断是不是 IPv6。 */

@@ -64,6 +64,20 @@ const statsLogLimit = 500
 // has not stopped using the resolver.
 const connectedWindow = 15 * time.Minute
 
+// The portal front-end is a web site that calls AGHub from its own host, so the
+// address of the request belongs to the web server, not to the visitor, and the
+// connection card would describe the wrong machine.  A portal forwards what it
+// saw instead, in these headers.
+//
+// The forwarded values only ever describe the visitor in that card, and they are
+// honoured on a token-authenticated request alone.  A wrong or forged header can
+// therefore mislabel a card and nothing else: it cannot change what AGHub
+// allows, counts, or reports about the account.
+const (
+	portalClientIPHeader = "X-Portal-Client-Ip"
+	portalClientUAHeader = "X-Portal-Client-Ua"
+)
+
 // InfoForRequest is [Manager.Info] with the parts that only make sense for a
 // signed-in visitor: where the request came from and how their traffic looks.
 //
@@ -72,6 +86,51 @@ const connectedWindow = 15 * time.Minute
 // from the sign-in and sign-up responses, so building those with Info alone
 // left the connection card and the counters empty until the visitor happened
 // to reload the page.
+//
+// The connection card describes the visitor, so a portal deployment that calls
+// AGHub from its own host has to forward the visitor's address and user agent.
+
+// forwardedClientIP returns the visitor address a portal deployment forwarded,
+// if it forwarded a usable one.
+func forwardedClientIP(r *http.Request) (ip netip.Addr, ok bool) {
+	v := strings.TrimSpace(r.Header.Get(portalClientIPHeader))
+	if v == "" {
+		return netip.Addr{}, false
+	}
+
+	// The portal may itself sit behind a reverse proxy and pass a list on.
+	if i := strings.IndexByte(v, ','); i >= 0 {
+		v = strings.TrimSpace(v[:i])
+	}
+
+	addr, err := netip.ParseAddr(v)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+
+	return addr.Unmap(), true
+}
+
+// visitorOf returns the address and the user agent to describe in the
+// connection card: the forwarded ones when a portal sent them, the ones of the
+// request itself otherwise.
+func visitorOf(r *http.Request) (ip netip.Addr, ua string) {
+	ip, ua = clientIP(r), r.UserAgent()
+
+	if fwd, ok := forwardedClientIP(r); ok {
+		ip = fwd
+	}
+
+	if fwd := strings.TrimSpace(r.Header.Get(portalClientUAHeader)); fwd != "" {
+		ua = fwd
+	}
+
+	return ip, ua
+}
+
+// InfoForRequest returns the portal information for the user the request is
+// authenticated as, with the connection card filled in for whoever made the
+// request.
 func (m *Manager) InfoForRequest(
 	ctx context.Context,
 	r *http.Request,
@@ -82,7 +141,12 @@ func (m *Manager) InfoForRequest(
 		return nil
 	}
 
-	info.Client = m.clientInfoOf(ctx, u, info.Info, clientIP(r), r.UserAgent())
+	ip, ua := clientIP(r), r.UserAgent()
+	if m.users.CheckPortalToken(portalTokenOf(r)) {
+		ip, ua = visitorOf(r)
+	}
+
+	info.Client = m.clientInfoOf(ctx, u, info.Info, ip, ua)
 
 	return info
 }
