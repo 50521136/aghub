@@ -83,6 +83,127 @@ type testUserStore struct {
 
 	// checkinCalls counts the Checkin calls.
 	checkinCalls int
+
+	// remembers holds the remembered devices by token hash.
+	remembers map[string]*testRemember
+}
+
+// testRemember is one remembered device of the fake store.
+type testRemember struct {
+	// uid is the account the device signs in.
+	uid string
+
+	// live is false once the token has been exchanged, which is what makes a
+	// token single use.
+	live bool
+
+	// expire is when the device stops working.
+	expire int64
+
+	// userAgent and ip describe the device.
+	userAgent, ip string
+}
+
+// rememberPut records a token for an account.
+func (s *testUserStore) rememberPut(tok, uid, userAgent, ip string) {
+	if s.remembers == nil {
+		s.remembers = map[string]*testRemember{}
+	}
+
+	s.remembers[users.RememberHash(tok)] = &testRemember{
+		uid:       uid,
+		live:      true,
+		expire:    time.Now().Add(24 * time.Hour).Unix(),
+		userAgent: userAgent,
+		ip:        ip,
+	}
+}
+
+// rememberNext mints a token of the shape the real store produces, which the
+// handlers check for before touching the store.
+func (s *testUserStore) rememberNext() (tok string) {
+	return fmt.Sprintf("%064x", len(s.remembers)+1)
+}
+
+// IssueRemember implements the [UserStore] interface.
+func (s *testUserStore) IssueRemember(uid, userAgent, ip string) (tok string, info *users.RememberInfo, err error) {
+	if s.defs[uid] == nil {
+		return "", nil, fmt.Errorf("no such user %q", uid)
+	}
+
+	tok = s.rememberNext()
+	s.rememberPut(tok, uid, userAgent, ip)
+
+	return tok, s.Remembered(uid)[0], nil
+}
+
+// ExchangeRemember implements the [UserStore] interface.
+func (s *testUserStore) ExchangeRemember(tok, userAgent, ip string) (
+	uid, newTok string,
+	info *users.RememberInfo,
+	err error,
+) {
+	rec := s.remembers[users.RememberHash(tok)]
+	if rec == nil || !rec.live {
+		return "", "", nil, users.ErrRememberUnknown
+	}
+
+	rec.live = false
+
+	newTok = s.rememberNext()
+	s.rememberPut(newTok, rec.uid, userAgent, ip)
+
+	list := s.Remembered(rec.uid)
+
+	return rec.uid, newTok, list[0], nil
+}
+
+// ForgetRemember implements the [UserStore] interface.
+func (s *testUserStore) ForgetRemember(tok string) (err error) {
+	delete(s.remembers, users.RememberHash(tok))
+
+	return nil
+}
+
+// ForgetRememberID implements the [UserStore] interface.
+func (s *testUserStore) ForgetRememberID(uid, id string) (err error) {
+	if rec := s.remembers[id]; rec != nil && rec.uid == uid {
+		delete(s.remembers, id)
+	}
+
+	return nil
+}
+
+// ForgetRememberAll implements the [UserStore] interface.
+func (s *testUserStore) ForgetRememberAll(uid, keep string) (n int) {
+	for hash, rec := range s.remembers {
+		if rec.uid != uid || hash == keep {
+			continue
+		}
+
+		delete(s.remembers, hash)
+		n++
+	}
+
+	return n
+}
+
+// Remembered implements the [UserStore] interface.
+func (s *testUserStore) Remembered(uid string) (list []*users.RememberInfo) {
+	for hash, rec := range s.remembers {
+		if rec.uid == uid && rec.live {
+			list = append(list, &users.RememberInfo{
+				ID:        hash,
+				UserAgent: rec.userAgent,
+				IP:        rec.ip,
+				Expire:    rec.expire,
+			})
+		}
+	}
+
+	sort.Slice(list, func(i, j int) (less bool) { return list[i].ID < list[j].ID })
+
+	return list
 }
 
 // Summary implements the [UserStore] interface.

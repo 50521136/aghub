@@ -40,6 +40,10 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 
 	// These need a session of their own.
 	reg.Register(http.MethodPost, "/portal/api/password", m.handlePassword)
+	reg.Register(http.MethodPost, "/portal/api/remember/exchange", m.handleRememberExchange)
+	reg.Register(http.MethodPost, "/portal/api/remember/forget", m.handleRememberForget)
+	reg.Register(http.MethodGet, "/portal/api/remember", m.handleRememberList)
+	reg.Register(http.MethodPost, "/portal/api/remember/revoke", m.handleRememberRevoke)
 	reg.Register(http.MethodPost, "/portal/api/email", m.handleEmail)
 
 	// Reading the avatar presets is public -- the picker is shown before the
@@ -612,6 +616,10 @@ type loginRequest struct {
 
 	// Password is the portal password.
 	Password string `json:"password"`
+
+	// Remember asks for a remembered sign-in, so that the next visit does not
+	// need the password again.
+	Remember bool `json:"remember"`
 }
 
 // loginResponse is the body of a successful sign-in.
@@ -629,6 +637,15 @@ type loginResponse struct {
 	// HTTP response cannot set.  A header carries no such baggage: it works
 	// over http and https, from any origin, with no cookie flags to get right.
 	Token string `json:"token"`
+
+	// RememberToken is the long-lived token for the browser, returned only
+	// when the request asked to be remembered.  The browser hands it back to
+	// POST /portal/api/remember/exchange to get a new session without a
+	// password.
+	RememberToken string `json:"remember_token,omitempty"`
+
+	// RememberExpire is when RememberToken stops working, as a Unix timestamp.
+	RememberExpire int64 `json:"remember_expire,omitempty"`
 }
 
 // handleLogin implements POST /portal/api/login.
@@ -660,10 +677,16 @@ func (m *Manager) handleLogin(w http.ResponseWriter, r *http.Request) {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusInternalServerError, "%s", err)
 	default:
 		m.setSessionCookie(w, r, s)
-		aghhttp.WriteJSONResponseOK(ctx, l, w, r, &loginResponse{
+
+		resp := &loginResponse{
 			User:  m.InfoForRequest(ctx, r, s.User),
 			Token: hex.EncodeToString(s.Token[:]),
-		})
+		}
+		if req.Remember {
+			m.issueRemember(ctx, r, s.User, resp)
+		}
+
+		aghhttp.WriteJSONResponseOK(ctx, l, w, r, resp)
 	}
 }
 

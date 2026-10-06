@@ -146,6 +146,7 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
     <a class="quick-item" href="<?= h(page_url('feedback')) ?>"><?= icon('feedback') ?><span>反馈</span></a>
     <a class="quick-item" href="<?= h(page_url('me', array('view' => 'password'))) ?>"><?= icon('key') ?><span>改密码</span></a>
     <a class="quick-item" href="<?= h(page_url('me', array('view' => 'email'))) ?>"><?= icon('send') ?><span>邮箱</span></a>
+    <a class="quick-item" href="<?= h(page_url('me', array('view' => 'devices'))) ?>"><?= icon('device') ?><span>登录设备</span></a>
   </div>
 </section>
 
@@ -181,6 +182,59 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="email" value="">
       <button type="submit" class="btn">解除绑定</button>
+    </form>
+  <?php endif; ?>
+</section>
+<?php endif; ?>
+
+<?php if (isset($_GET['view']) && $_GET['view'] === 'devices'): ?>
+<?php
+// 当前这台设备用令牌的哈希认出来 —— 列表里的 id 就是它，服务端从不下发令牌本身。
+$dev_me = remember_hash(remember_token());
+?>
+<section class="card">
+  <div class="card-head">
+    <h2>登录设备</h2>
+    <span class="card-note"><?= $devices === array() ? '一台都没有' : count($devices) . ' 台' ?></span>
+  </div>
+  <p class="hint">
+    这些设备打开网站不用再输密码。令牌每用一次就换一个，列表里存的是它的指纹，
+    不是令牌本身 —— 谁捡到这份列表也用不了。不认识的设备在这里退出就行。
+  </p>
+  <?php if ($devices !== array()): ?>
+    <div class="log-list">
+      <?php foreach ($devices as $d): ?>
+        <?php
+        $did = isset($d['id']) ? (string) $d['id'] : '';
+        $dname = device_label(isset($d['user_agent']) ? (string) $d['user_agent'] : '');
+        $dip = isset($d['ip']) && $d['ip'] !== '' ? (string) $d['ip'] : '地址未知';
+        $dlast = isset($d['last_used']) ? (int) $d['last_used'] : 0;
+        $dcur = ($dev_me !== '' && $did === $dev_me);
+        ?>
+        <div class="log-item">
+          <div class="log-top">
+            <span class="log-host"><?= h($dname !== '' ? $dname : '认不出的设备') ?></span>
+            <?php if ($dcur): ?><span class="tag tag-ok">这台</span><?php endif; ?>
+            <span class="log-meta-txt"><?= h($dip) ?> · <?= h(since_h($dlast)) ?></span>
+            <?php if (!$dcur): ?>
+              <span class="row-actions">
+                <form method="post">
+                  <input type="hidden" name="action" value="remember">
+                  <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+                  <input type="hidden" name="id" value="<?= h($did) ?>">
+                  <button type="submit" class="btn btn-wide">退出</button>
+                </form>
+              </span>
+            <?php endif; ?>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+    <form method="post">
+      <input type="hidden" name="action" value="remember">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="sub" value="all">
+      <button type="submit" class="btn btn-block">退出其它设备</button>
     </form>
   <?php endif; ?>
 </section>

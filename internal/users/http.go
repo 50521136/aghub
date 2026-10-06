@@ -674,6 +674,16 @@ func (m *Manager) handlePortalPassword(w http.ResponseWriter, r *http.Request) {
 		err = m.SetPortalPassword(req.UID, req.Password)
 	}
 
+	if err == nil && req.Password != "" {
+		// The administrator is not the owner signing in, so the remembered
+		// devices go too: a token that outlived the password would let the
+		// old device straight back in.
+		if n := m.ForgetRememberAll(req.UID, ""); n > 0 {
+			l.InfoContext(ctx, "portal password set, signing the remembered devices out",
+				"uid", req.UID, "devices", n)
+		}
+	}
+
 	if err != nil {
 		// The error explains why the password was refused, which is useful
 		// to the administrator and reveals nothing about other users.

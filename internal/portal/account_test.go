@@ -84,7 +84,7 @@ func (s *testUserStore) SetEmail(uid, email string, verified bool) (err error) {
 	return nil
 }
 
-func (s *testUserStore) SetPortalPassword(uid, password string) (err error) {
+func (s *testUserStore) SetPortalPasswordKeeping(uid, password, keepHash string) (err error) {
 	if _, ok := s.defs[uid]; !ok {
 		return errors.New("no such user")
 	}
@@ -94,6 +94,10 @@ func (s *testUserStore) SetPortalPassword(uid, password string) (err error) {
 	}
 
 	s.passwords[uid] = password
+
+	// The real store signs the other devices out here, and the handler tests
+	// rely on that being the contract rather than a detail of the real one.
+	s.ForgetRememberAll(uid, keepHash)
 
 	return nil
 }

@@ -140,8 +140,32 @@ type UserStore interface {
 	// SetEmail sets or clears the e-mail address of the user.
 	SetEmail(uid, email string, verified bool) (err error)
 
-	// SetPortalPassword sets the portal password of the user.
-	SetPortalPassword(uid, password string) (err error)
+	// SetPortalPasswordKeeping sets the portal password of the user and signs
+	// the remembered devices out, sparing the one whose hash is keepHash.  The
+	// portal always knows which device is asking, so there is no variant that
+	// spares none.
+	SetPortalPasswordKeeping(uid, password, keepHash string) (err error)
+
+	// IssueRemember records a remembered device and returns the token to hand
+	// to the browser.  The token itself is never stored.
+	IssueRemember(uid, userAgent, ip string) (tok string, info *users.RememberInfo, err error)
+
+	// ExchangeRemember turns a remembered device into the UID it signs in and
+	// the replacement token the browser has to keep.
+	ExchangeRemember(tok, userAgent, ip string) (uid, newTok string, info *users.RememberInfo, err error)
+
+	// ForgetRemember revokes the device that holds the given token.
+	ForgetRemember(tok string) (err error)
+
+	// ForgetRememberID revokes one device of an account by its id.
+	ForgetRememberID(uid, id string) (err error)
+
+	// ForgetRememberAll revokes the remembered devices of an account, leaving
+	// the one whose token hash is keep alone when it is not empty.
+	ForgetRememberAll(uid, keep string) (n int)
+
+	// Remembered lists the remembered devices of an account, newest first.
+	Remembered(uid string) (list []*users.RememberInfo)
 
 	// SetAvatar sets the avatar preset of the user.  Only a value from
 	// [users.AvatarPresets] is accepted.

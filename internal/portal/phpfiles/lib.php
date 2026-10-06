@@ -239,7 +239,9 @@ function fetch_all(array $want): array
         $ttl = (int) $pair[1];
         $ttls[$key] = $ttl;
 
-        $item = cache_item($key, $ttl);
+        // 负数的 TTL 表示不读缓存：给刚被改过的数据用（比如踢完设备后的设备
+        // 列表）。0 秒不算不读 —— 同一秒内的第二次请求还是会命中。
+        $item = $ttl < 0 ? null : cache_item($key, $ttl);
         if ($item !== null) {
             $out[$key] = array('v' => $item['v'], 'at' => (int) $item['at'], 'fresh' => false);
         } else {
@@ -434,6 +436,92 @@ function visitor_ua(): string
     return (string) preg_replace('/[^\x20-\x7E]/', '', $ua);
 }
 
+// ---------------------------------------------------------------- 保持登录
+
+/** remember_name 长期令牌 cookie 的名字。 */
+function remember_name(): string
+{
+    return 'aghub_remember';
+}
+
+/**
+ * remember_token 取浏览器里的长期令牌。
+ *
+ * 它不是会话，只能拿去换会话，所以放 cookie 比放 URL 合适：cookie 是 HttpOnly
+ * 的，页面脚本读不到，也不会跟着链接被复制出去。
+ */
+function remember_token(): string
+{
+    return isset($_COOKIE[remember_name()]) ? trim((string) $_COOKIE[remember_name()]) : '';
+}
+
+/** remember_save 把长期令牌写回浏览器。 */
+function remember_save(string $tok): void
+{
+    if ($tok === '') {
+        return;
+    }
+
+    setcookie(remember_name(), $tok, array(
+        'expires' => time() + 90 * 86400,
+        'path' => '/',
+        'httponly' => true,
+        'secure' => is_https(),
+        'samesite' => 'Lax',
+    ));
+    $_COOKIE[remember_name()] = $tok;
+}
+
+/** remember_clear 清掉长期令牌。 */
+function remember_clear(): void
+{
+    setcookie(remember_name(), '', array(
+        'expires' => time() - 3600,
+        'path' => '/',
+        'httponly' => true,
+        'secure' => is_https(),
+        'samesite' => 'Lax',
+    ));
+    unset($_COOKIE[remember_name()]);
+}
+
+/** remember_hash 令牌在服务端的标识，和登录设备列表里的 id 是同一个东西。 */
+function remember_hash(string $tok): string
+{
+    return hash('sha256', $tok);
+}
+
+/**
+ * remember_resume 用长期令牌静默换一个新会话。
+ *
+ * 会话没了 —— 关过浏览器、闲置被回收、面板重启 —— 但长期令牌还在的时候，用户
+ * 不该看到登录框：这里换一个新会话，页面照常渲染。换回来的新令牌立刻写回 cookie，
+ * 因为令牌是一次性的，旧的换过就作废。
+ *
+ * 返回是否恢复成功。
+ */
+function remember_resume(): bool
+{
+    if (session_token() !== '' || remember_token() === '') {
+        return false;
+    }
+
+    $r = aghub('POST', '/portal/api/remember/exchange', array('token' => remember_token()));
+    if (empty($r['ok']) || empty($r['data']['token'])) {
+        // 令牌已经失效就别再留着，否则每次打开页面都要白跑一趟。
+        if ((int) $r['status'] === 401) {
+            remember_clear();
+        }
+
+        return false;
+    }
+
+    $_SESSION['aghub_token'] = (string) $r['data']['token'];
+    remember_save(isset($r['data']['remember_token']) ? (string) $r['data']['remember_token'] : '');
+
+    return true;
+}
+
 /** ip_is_v6 判断是不是 IPv6。 */
 function ip_is_v6(string $ip): bool
 {
@@ -443,7 +531,12 @@ function ip_is_v6(string $ip): bool
 /** device_name 从 UA 猜一个设备名，认不出来就返回空。 */
 function device_name(): string
 {
-    $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+    return device_label(isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '');
+}
+
+/** device_label 从任意 UA 猜一个设备名，登录设备列表用的是它。 */
+function device_label(string $ua): string
+{
     if ($ua === '') {
         return '';
     }
@@ -894,6 +987,8 @@ function icon(string $name, string $class = ''): string
         'clock' => '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
         'download' => '<path d="M12 3.5v11M8 11l4 4 4-4"/><path d="M4.5 19.5h15"/>',
         'send' => '<path d="M20.5 3.5 3.5 10.5l6.5 2.5 2.5 6.5 8-16Z"/><path d="M10 13l4-4"/>',
+        'device' => '<rect x="7" y="3" width="10" height="18" rx="2.5"/>'
+            . '<path d="M10.5 17.5h3"/>',
     );
 
     $body = isset($paths[$name]) ? $paths[$name] : '';

@@ -391,6 +391,12 @@ type passwordRequest struct {
 
 	// NewPassword is the password to set.
 	NewPassword string `json:"new_password"`
+
+	// RememberToken is the remembered device making the change, if any.  It is
+	// spared when the other devices are signed out: the visitor changing their
+	// password should not lose their own sign-in, while every other device
+	// must, because a token that outlived the password is a way back in.
+	RememberToken string `json:"remember_token"`
 }
 
 // handlePassword is the handler for the POST /portal/api/password HTTP API.
@@ -423,7 +429,14 @@ func (m *Manager) handlePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = m.users.SetPortalPassword(u.UID, req.NewPassword)
+	// Changing the password signs every other device out.  The one making the
+	// change is spared, because it just proved it knows the old password.
+	keep := ""
+	if req.RememberToken != "" {
+		keep = users.RememberHash(req.RememberToken)
+	}
+
+	err = m.users.SetPortalPasswordKeeping(u.UID, req.NewPassword, keep)
 	if err != nil {
 		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "%s", err)
 

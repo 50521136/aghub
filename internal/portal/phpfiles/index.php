@@ -13,6 +13,10 @@ require_once __DIR__ . '/lib.php';
 
 session_boot();
 
+// 会话可能是空的（关过浏览器、闲置被回收），但浏览器里的长期令牌还在：先拿它
+// 换一个新会话，用户就不会被弹回登录框。
+remember_resume();
+
 $nav = nav_items();
 
 // 除了四个标签页，还有两个挂在它们下面的页面：日志在「我的」里，注册在登录流程里。
@@ -39,7 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
 
     if (!csrf_ok()) {
-        $flash_error = '页面已过期，请重新提交。';
+        // 会话被回收之后再提交表单就会走到这里。现在有「保持登录」兜着，刷新
+        // 一下会话就回来了，所以提示里说清楚要刷新。
+        $flash_error = '页面已过期，请刷新后重新提交。';
     } elseif ($action === 'login') {
         $login = trim(isset($_POST['login']) ? (string) $_POST['login'] : '');
         $password = isset($_POST['password']) ? (string) $_POST['password'] : '';
@@ -50,20 +56,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $r = aghub('POST', '/portal/api/login', array(
                 'login' => $login,
                 'password' => $password,
+                // 顺便要一个长期令牌：会话文件随时可能被 PHP 回收，令牌留在
+                // 浏览器里才能让用户下次打开页面不用再登一次。
+                'remember' => true,
             ));
 
             if ($r['ok'] && !empty($r['data']['token'])) {
                 session_regenerate_id(true);
                 $_SESSION['aghub_token'] = (string) $r['data']['token'];
                 unset($_SESSION['csrf'], $_SESSION['cache']);
+                remember_save(isset($r['data']['remember_token']) ? (string) $r['data']['remember_token'] : '');
                 redirect(page_url('me'));
             }
 
             $flash_error = $r['error'] !== '' ? $r['error'] : '用户名或密码不对。';
         }
     } elseif ($action === 'logout') {
+        // 先撤长期令牌再清会话：只清会话的话，下次打开页面又会被静默登回来，
+        // 「退出登录」就成了假的。
+        if (remember_token() !== '') {
+            aghub('POST', '/portal/api/remember/forget', array('token' => remember_token()));
+        }
+
         aghub('POST', '/portal/api/logout', array(), session_token());
         session_forget();
+        remember_clear();
         redirect(page_url());
     } elseif ($action === 'password') {
         if (session_token() === '') {
@@ -81,13 +98,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $r = aghub('POST', '/portal/api/password', array(
                     'old_password' => $old,
                     'new_password' => $new,
+                    // 告诉服务端是哪台设备在改密码：其它设备会被撤掉，这台留着，
+                    // 否则用户改完密码自己也掉线了。
+                    'remember_token' => remember_token(),
                 ), session_token());
 
                 if ($r['ok']) {
-                    $flash_ok = '密码已修改。';
+                    $flash_ok = '密码已修改，其它设备已退出登录。';
                 } else {
                     $flash_error = $r['error'];
                 }
+            }
+        }
+    } elseif ($action === 'remember') {
+        if (session_token() === '') {
+            $flash_error = '请先登录。';
+        } else {
+            $sub = isset($_POST['sub']) ? (string) $_POST['sub'] : '';
+
+            if ($sub === 'all') {
+                // 退出其它设备，但留下当前这台：它刚证明了自己是谁。
+                $r = aghub('POST', '/portal/api/remember/revoke', array(
+                    'all' => true,
+                    'keep' => remember_hash(remember_token()),
+                ), session_token());
+            } else {
+                $r = aghub('POST', '/portal/api/remember/revoke', array(
+                    'id' => isset($_POST['id']) ? (string) $_POST['id'] : '',
+                ), session_token());
+            }
+
+            if ($r['ok']) {
+                // 列表是刚被改过的那份，别读缓存。
+                cache_forget('devices');
+                $flash_ok = $sub === 'all' ? '其它设备已退出登录。' : '该设备已退出登录。';
+            } else {
+                $flash_error = $r['error'];
             }
         }
     } elseif ($action === 'feedback') {
@@ -236,6 +282,12 @@ if ($logged && $page === 'log') {
 if ($logged && $page === 'me') {
     // 预设列表由 AGHub 单一来源提供，PHP 不自己抄一份。
     $want['avatars'] = array(array('GET', '/portal/api/avatar'), 300);
+
+    if (isset($_GET['view']) && $_GET['view'] === 'devices') {
+        // 设备列表只在那一页取：它是一次真实的网络往返，不该让每个「我的」页
+        // 都付这个成本。TTL 给 -1（不读缓存）—— 刚踢完设备看到的必须是新列表。
+        $want['devices'] = array(array('GET', '/portal/api/remember', null, $session), -1);
+    }
 }
 if ($page === 'ranking') {
     // 缓存键要带上口径，否则切到累计榜会读到 24 小时榜的缓存。
@@ -289,6 +341,15 @@ if ($logged && $page === 'log' && isset($got['log:' . md5($log_q)])) {
         $log_locked = true;
     } elseif (is_array($r)) {
         $flash_error = (string) $r['error'];
+    }
+}
+
+$devices = array();
+if ($logged && isset($got['devices'])) {
+    $dev_r = $got['devices']['v'];
+    if (is_array($dev_r) && !empty($dev_r['ok'])) {
+        $devices = isset($dev_r['data']['devices']) && is_array($dev_r['data']['devices'])
+            ? $dev_r['data']['devices'] : array();
     }
 }
 

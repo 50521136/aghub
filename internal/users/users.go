@@ -316,6 +316,12 @@ type Manager struct {
 	// separate map makes that impossible by construction.
 	portalPasswords map[string]string
 
+	// remember holds the remembered devices by the hash of their token.  Only
+	// the hash is stored, so the state file is not a set of working
+	// credentials.  mu guards it: it is touched when a visitor signs in or
+	// comes back, never on the query path.
+	remember map[string]*rememberToken
+
 	// path is the path of the state file.
 	path string
 
@@ -479,6 +485,7 @@ func New(cfg *Config) (m *Manager, err error) {
 		defs:            map[string]*User{},
 		usage:           map[string]*usage{},
 		portalPasswords: map[string]string{},
+		remember:        map[string]*rememberToken{},
 		probes:          map[string]*probeEntry{},
 		path:            cfg.Path,
 		loc:             loc,
@@ -1932,6 +1939,7 @@ func (m *Manager) Remove(uid string) (err error) {
 	delete(m.defs, uid)
 	delete(m.usage, uid)
 	delete(m.portalPasswords, uid)
+	m.forgetRememberLocked(uid, "")
 	m.publishLocked()
 	m.dirty.Store(true)
 
@@ -1995,6 +2003,21 @@ func (m *Manager) SetEnabled(uids []string, enabled bool) (n int) {
 // SetPortalPassword sets the password the user signs in to the user portal
 // with.  It returns an error if the password does not meet the length limits.
 func (m *Manager) SetPortalPassword(uid, password string) (err error) {
+	return m.setPortalPassword(uid, password, "")
+}
+
+// SetPortalPasswordKeeping is [Manager.SetPortalPassword] for the visitor
+// changing their own password: the device they are on stays signed in, every
+// other one is signed out.  It exists because a token that outlived the
+// password is a way back into the account, and because signing the visitor out
+// of the page they are typing on is not a security feature.
+func (m *Manager) SetPortalPasswordKeeping(uid, password, keepHash string) (err error) {
+	return m.setPortalPassword(uid, password, keepHash)
+}
+
+// setPortalPassword is the shared body of the two exported setters.  keepHash
+// is the hash of the one remembered device to spare, if any.
+func (m *Manager) setPortalPassword(uid, password, keepHash string) (err error) {
 	if len(password) < minPortalPasswordLen {
 		return fmt.Errorf("users: password is shorter than %d characters", minPortalPasswordLen)
 	}
@@ -2016,6 +2039,12 @@ func (m *Manager) SetPortalPassword(uid, password string) (err error) {
 	}
 
 	m.portalPasswords[uid] = string(hash)
+
+	// A remembered device that outlived the password is a way back into the
+	// account, so the password and the devices it was set against change
+	// together.
+	m.forgetRememberLocked(uid, keepHash)
+
 	m.dirty.Store(true)
 
 	return nil
@@ -2031,6 +2060,7 @@ func (m *Manager) ClearPortalPassword(uid string) (err error) {
 	}
 
 	delete(m.portalPasswords, uid)
+	m.forgetRememberLocked(uid, "")
 	m.dirty.Store(true)
 
 	return nil

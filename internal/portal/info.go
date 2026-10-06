@@ -128,6 +128,17 @@ func visitorOf(r *http.Request) (ip netip.Addr, ua string) {
 	return ip, ua
 }
 
+// requestVisitor returns the address and the user agent to describe for this
+// request: the ones a portal forwarded when the request proves it is the
+// portal, the ones of the request itself otherwise.
+func (m *Manager) requestVisitor(r *http.Request) (ip netip.Addr, ua string) {
+	if m.users.CheckPortalToken(portalTokenOf(r)) {
+		return visitorOf(r)
+	}
+
+	return clientIP(r), r.UserAgent()
+}
+
 // InfoForRequest returns the portal information for the user the request is
 // authenticated as, with the connection card filled in for whoever made the
 // request.
@@ -141,10 +152,7 @@ func (m *Manager) InfoForRequest(
 		return nil
 	}
 
-	ip, ua := clientIP(r), r.UserAgent()
-	if m.users.CheckPortalToken(portalTokenOf(r)) {
-		ip, ua = visitorOf(r)
-	}
+	ip, ua := m.requestVisitor(r)
 
 	info.Client = m.clientInfoOf(ctx, u, info.Info, ip, ua)
 

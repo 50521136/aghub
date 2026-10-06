@@ -29,6 +29,10 @@ type stateFile struct {
 	// the administrator API.
 	PortalPasswords map[string]string `json:"portal_passwords,omitempty"`
 
+	// RememberTokens are the remembered devices by the hash of their token.
+	// The tokens themselves are only ever in the visitor's browser.
+	RememberTokens map[string]*rememberToken `json:"remember_tokens,omitempty"`
+
 	// Settings is the manager-wide configuration.
 	Settings *Settings `json:"settings,omitempty"`
 
@@ -110,6 +114,19 @@ func (m *Manager) load() (err error) {
 		m.usage[u.UID] = us
 	}
 
+	// A remembered device of a user that is gone is dropped, and so is one
+	// that has expired: neither can sign anyone in.
+	now := m.now()
+	for hash, rec := range state.RememberTokens {
+		if rec == nil || rec.UID == "" || !now.Before(rec.Expire) {
+			continue
+		}
+
+		if _, ok := m.defs[rec.UID]; ok {
+			m.remember[hash] = rec
+		}
+	}
+
 	// The passwords of the users that are gone are dropped, so that deleting
 	// and re-creating a user does not restore the old credentials.
 	for uid, hash := range state.PortalPasswords {
@@ -175,6 +192,11 @@ func (m *Manager) save() (err error) {
 	if len(m.portalPasswords) > 0 {
 		state.PortalPasswords = make(map[string]string, len(m.portalPasswords))
 		maps.Copy(state.PortalPasswords, m.portalPasswords)
+	}
+
+	if len(m.remember) > 0 {
+		state.RememberTokens = make(map[string]*rememberToken, len(m.remember))
+		maps.Copy(state.RememberTokens, m.remember)
 	}
 
 	m.mu.Unlock()
