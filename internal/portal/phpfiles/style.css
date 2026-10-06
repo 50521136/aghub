@@ -861,3 +861,9 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
 
 /* 卡片里整行的动作按钮，拇指够得到。 */
 .btn-wide { display: block; width: 100%; text-align: center; }
+
+/* 输入框和按钮并排，用在「先取再填」的字段上（验证码）。
+   输入框吃掉剩下的宽度，按钮不换行也不被压扁。 */
+.field-row { display: flex; gap: 8px; align-items: center; }
+.field-row input { flex: 1 1 auto; min-width: 0; }
+.field-row .btn { flex: 0 0 auto; white-space: nowrap; }

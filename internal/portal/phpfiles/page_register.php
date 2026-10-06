@@ -24,6 +24,20 @@ $email_required = !empty($site['email_required']);
       <span>邮箱</span>
       <input type="email" name="email" autocomplete="email" required maxlength="254">
     </label>
+    <?php if ($email_required): ?>
+      <?php /* 验证码只在开关打开时出现。发送按钮走本站的 ?p=emailcode ——
+               浏览器不直接找 AGHub，这是门户一直以来的规矩。 */ ?>
+      <label>
+        <span>邮箱验证码</span>
+        <span class="field-row">
+          <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" pattern="[0-9]{6}" placeholder="6 位数字" required>
+          <button type="button" class="btn" data-code-btn
+                  data-csrf="<?= h(csrf_token()) ?>">获取验证码</button>
+        </span>
+      </label>
+      <p class="hint" data-code-hint>点「获取验证码」，邮件里会有 6 位数字，15 分钟内有效。</p>
+    <?php endif; ?>
     <label>
       <span>密码（至少 8 位）</span>
       <input type="password" name="password" autocomplete="new-password" required minlength="8">

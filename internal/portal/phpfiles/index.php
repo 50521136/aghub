@@ -17,7 +17,10 @@ $nav = nav_items();
 
 // 除了四个标签页，还有两个挂在它们下面的页面：日志在「我的」里，注册在登录流程里。
 // 这两个不在导航表里，所以不能拿导航表当白名单。
-$extra = array('log' => 'me', 'register' => 'me', 'ios' => 'me', 'probe' => 'me', 'avatar' => 'me');
+$extra = array(
+    'log' => 'me', 'register' => 'me', 'ios' => 'me',
+    'probe' => 'me', 'avatar' => 'me', 'emailcode' => 'me',
+);
 
 $page = isset($_GET['p']) ? (string) $_GET['p'] : 'report';
 if (!isset($nav[$page]) && !isset($extra[$page])) {
@@ -115,17 +118,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = trim(isset($_POST['email']) ? (string) $_POST['email'] : '');
         $password = isset($_POST['password']) ? (string) $_POST['password'] : '';
 
-        $r = aghub('POST', '/portal/api/register', array(
+        $code = trim(isset($_POST['code']) ? (string) $_POST['code'] : '');
+
+        $body = array(
             'name' => $name,
             'email' => $email,
             'password' => $password,
-        ));
+        );
+
+        // 邮箱验证关着的时候表单不渲染验证码，这里也就不送。送空串和整个不送
+        // 对接口是一回事，但少一个字段更干净。
+        if ($code !== '') {
+            $body['code'] = $code;
+        }
+
+        $r = aghub('POST', '/portal/api/register', $body);
 
         if ($r['ok']) {
             $flash_ok = '注册成功，用刚才的用户名登录即可。';
             $page = 'me';
         } else {
-            $flash_error = $r['error'];
+            $flash_error = register_error($r);
         }
     } elseif ($action === 'checkin') {
         // 签到只做转发：送多少额度、连续几天、什么时候解锁日志，全部由 AGHub
@@ -328,6 +341,34 @@ if ($page === 'probe') {
     $r = probe_status(isset($_GET['t']) ? (string) $_GET['t'] : '', $session, $anon_owner);
 
     echo json_encode($r, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// 发邮箱验证码。浏览器不直接找 AGHub，所以这里替它转发一次 —— 门户的整个
+// 设计就是浏览器只跟自己站点说话。
+//
+// 这个接口不需要登录（注册还没有账号），所以必须卡 CSRF：不卡的话，任何页面
+// 都能拿我们的站点当发信机用。频率由 AGHub 按来访 IP 限。
+if ($page === 'emailcode') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+
+    $out = array('ok' => false, 'error' => '发不出去，请稍后再试。');
+
+    if (!csrf_ok()) {
+        $out['error'] = '页面已过期，刷新后重试。';
+    } else {
+        $addr = trim(isset($_POST['email']) ? (string) $_POST['email'] : '');
+        $r = aghub('POST', '/portal/api/email/code', array('email' => $addr));
+
+        if (is_array($r) && !empty($r['ok'])) {
+            $out = array('ok' => true, 'error' => '');
+        } else {
+            $out['error'] = mail_code_message($r);
+        }
+    }
+
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -621,6 +662,73 @@ function fallback(text, done) {
   }
 
   setTimeout(ask, delays[step++]);
+})();
+
+/* 注册页的「获取验证码」。点下去要等 AGHub 真的把信发出去，所以请求期间禁用
+   按钮，成功后 60 秒才能再点 —— 接口那边另外按 IP 限流，两道都要有。 */
+(function () {
+  var btn = document.querySelector('[data-code-btn]');
+  if (!btn) { return; }
+
+  var hint = document.querySelector('[data-code-hint]');
+  var form = btn.closest('form');
+  var mail = form ? form.querySelector('input[name="email"]') : null;
+  var field = form ? form.querySelector('input[name="code"]') : null;
+  var left = 0;
+
+  function say(text, bad) {
+    if (!hint) { return; }
+    hint.textContent = text;
+    hint.className = bad ? 'hint hint-bad' : 'hint';
+  }
+
+  function tick() {
+    if (left <= 0) {
+      btn.disabled = false;
+      btn.textContent = '重新获取';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = left + ' 秒后可重发';
+    left -= 1;
+    setTimeout(tick, 1000);
+  }
+
+  btn.addEventListener('click', function () {
+    var email = mail ? mail.value.trim() : '';
+    if (!email) {
+      say('先填邮箱。', true);
+      if (mail) { mail.focus(); }
+      return;
+    }
+
+    btn.disabled = true;
+    say('正在发送…', false);
+
+    var body = new URLSearchParams();
+    body.set('csrf', btn.getAttribute('data-csrf') || '');
+    body.set('email', email);
+
+    fetch('?p=emailcode', { method: 'POST', body: body, cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.ok) {
+          say('验证码已发出，去邮箱里找 6 位数字。', false);
+          if (field) { field.focus(); }
+          left = 60;
+          tick();
+          return;
+        }
+
+        say((d && d.error) || '发不出去，请稍后再试。', true);
+        btn.disabled = false;
+      })
+      .catch(function () {
+        say('网络不好，没发出去。', true);
+        btn.disabled = false;
+      });
+  });
 })();
 </script>
 </body>

@@ -86,6 +86,10 @@ function aghub(string $method, string $path, ?array $body = null, string $sessio
         'ok' => $ok,
         'status' => $code,
         'error' => $ok ? '' : aghub_error_message($code, $data),
+        // AGHub 的错误响应是纯文本，不是 JSON，所以正文在 $data 里拿不到。
+        // 同一个状态码有多个原因的接口（注册：邮箱格式、验证码、重名）只能靠
+        // 它分辨，否则用户看到的永远是「AGHub 返回了 HTTP 400」。
+        'detail' => $ok ? '' : trim((string) $raw),
         'data' => $data,
     );
 }
@@ -568,6 +572,61 @@ function pct($used, $limit): int
     $p = (int) round((int) $used * 100 / $limit);
 
     return max(0, min(100, $p));
+}
+
+/**
+ * register_error 把注册接口的错误翻成中文。
+ *
+ * 验证码那一条尤其要翻：接口只会说「验证码无效或已过期」，而用户很可能压根
+ * 没收到过码。照抄原文，人会以为是自己填错了。
+ */
+function register_error($r): string
+{
+    $err = is_array($r) && isset($r['error']) ? (string) $r['error'] : '';
+    $status = is_array($r) ? (int) ($r['status'] ?? 0) : 0;
+    $detail = is_array($r) && isset($r['detail']) ? (string) $r['detail'] : '';
+    $hay = $detail !== '' ? $detail : $err;
+
+    if (strpos($hay, 'verification code') !== false) {
+        return '验证码不对或已经过期，请重新获取。';
+    }
+
+    if ($status === 503 || strpos($hay, 'mail server is not configured') !== false) {
+        return '管理员还没有配置邮件服务器，现在注册不了。';
+    }
+
+    if (strpos($hay, 'already') !== false) {
+        return '这个邮箱或用户名已经注册过了。';
+    }
+
+    if ($status === 429) {
+        return '操作太频繁，等一会儿再试。';
+    }
+
+    return $err !== '' ? $err : '注册失败，请稍后再试。';
+}
+
+/**
+ * mail_code_message 把「发验证码」的结果翻成用户能看懂的话。
+ *
+ * 状态码是接口给的，话是门户自己说的 —— 把英文原文丢给用户没意义。
+ */
+function mail_code_message($r): string
+{
+    $status = is_array($r) ? (int) ($r['status'] ?? 0) : 0;
+
+    switch ($status) {
+        case 400:
+            return '邮箱地址不对，检查一下。';
+        case 429:
+            return '发得太频繁了，等一分钟再试。';
+        case 502:
+            return '邮件没发出去，稍后再试。';
+        case 503:
+            return '管理员还没有配置邮件服务器。';
+    }
+
+    return '发不出去，请稍后再试。';
 }
 
 /**
