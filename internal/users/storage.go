@@ -90,13 +90,20 @@ func (m *Manager) load() (err error) {
 			us.passed.Store(st.Passed)
 			us.dayStart.Store(st.DayStart)
 			us.dayCount.Store(st.DayCount)
+			us.hourStart.Store(st.HourStart)
+			us.hourCount.Store(st.HourCount)
 			us.checkinDay.Store(st.CheckinDay)
 			us.streak.Store(st.Streak)
 			us.tempBonus.Store(st.TempBonus)
 			us.tempBonusDay.Store(st.TempBonusDay)
+			us.logUnlocked.Store(st.LogUnlocked)
 
 			if len(st.History) > 0 {
 				us.history.Store(&st.History)
+			}
+
+			if len(st.Hours) > 0 {
+				us.hours.Store(&st.Hours)
 			}
 		}
 
@@ -144,14 +151,21 @@ func (m *Manager) save() (err error) {
 				Passed:       us.passed.Load(),
 				DayStart:     us.dayStart.Load(),
 				DayCount:     us.dayCount.Load(),
+				HourStart:    us.hourStart.Load(),
+				HourCount:    us.hourCount.Load(),
 				CheckinDay:   us.checkinDay.Load(),
 				Streak:       us.streak.Load(),
 				TempBonus:    us.tempBonus.Load(),
 				TempBonusDay: us.tempBonusDay.Load(),
+				LogUnlocked:  us.logUnlocked.Load(),
 			}
 
 			if h := us.history.Load(); h != nil {
 				st.History = *h
+			}
+
+			if h := us.hours.Load(); h != nil {
+				st.Hours = *h
 			}
 
 			state.Usage[uid] = st

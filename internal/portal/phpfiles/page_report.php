@@ -47,10 +47,16 @@ $rate = $q > 0 ? (int) round($b * 100 / $q) : 0;
 $scope = $has24 ? '近 24 小时' : '累计';
 ?>
 
+<?php
+// 有探测器（或至少配了服务域名）时先说设备状态，连探测都做不到才退回中性的
+// 标题。未登录也一样 ——「你这台设备接进来了吗」对访客比对老用户更有用，
+// 那正是决定他要不要配一下的东西。
+$probing = $probe_label !== '' || $probe_host !== '';
+?>
 <section class="hero">
   <?php /* 状态放标题上面：先说「你这台设备怎么样了」，再给标题。
            起始文案中性 —— 探测结果还没出来，不能先替用户说「已经拦下了」。 */ ?>
-  <?php if ($logged): ?>
+  <?php if ($probing): ?>
     <div class="hero-state">
       <?php if ($probe_label !== ''): ?>
         <span class="pill pill-wait" data-probe-pill data-probe-label="<?= h($probe_label) ?>">
@@ -66,15 +72,75 @@ $scope = $has24 ? '近 24 小时' : '累计';
     </div>
   <?php endif; ?>
 
-  <h1 data-probe-head data-probe-when-seen="广告正在被拦下"><?= $logged ? '设备尚未接入' : '加密 DNS 战报' ?></h1>
+  <h1 data-probe-head data-probe-when-seen="广告正在被拦下"><?= $probing ? '设备尚未接入' : '加密 DNS 战报' ?></h1>
   <p class="hero-sub">
     <?php if ($logged): ?>
       配置完成后，回到本页即可看到 24 小时查询战报
+    <?php elseif ($probing): ?>
+      这台设备还没用本站解析。登录后可以拿到接入地址，配好回到本页就会显示已接入。
     <?php else: ?>
       加密 DNS 解析，登录后看自己的用量和日志
     <?php endif; ?>
   </p>
 </section>
+
+<?php if ($logged): ?>
+<?php
+  $ck_streak = (int) ($checkin['streak'] ?? 0);
+  $ck_today = !empty($checkin['checked_in_today']);
+  $ck_bonus = (int) ($checkin['temp_bonus'] ?? 0);
+  $ck_daily = (int) ($checkin['daily_bonus'] ?? 0);
+  $ck_next = (int) ($checkin['next_milestone'] ?? 0);
+  $ck_next_bonus = (int) ($checkin['next_milestone_bonus'] ?? 0);
+  $ck_unlocked = !empty($checkin['log_unlocked']);
+  $ck_need = (int) ($checkin['log_unlock_streak'] ?? 0);
+?>
+<section class="card">
+  <div class="card-head">
+    <h2>每日签到</h2>
+    <span class="card-note"><?= $ck_streak > 0 ? '已连续 ' . (int) $ck_streak . ' 天' : '还没开始' ?></span>
+  </div>
+  <div class="kv">
+    <div class="kk"><?= icon('bolt') ?>今日额度</div>
+    <div class="vv">
+      <?php if ($ck_today && $ck_bonus > 0): ?>
+        <span class="ok-txt">已加 <?= h(num_h($ck_bonus)) ?> 次</span>
+      <?php elseif ($ck_today): ?>
+        <span class="ok-txt">今天已签到</span>
+      <?php else: ?>
+        签到临时 +<?= h(num_h($ck_daily)) ?> 次，当天有效
+      <?php endif; ?>
+    </div>
+  </div>
+  <div class="kv">
+    <div class="kk"><?= icon('key') ?>查询日志</div>
+    <div class="vv">
+      <?php if ($ck_unlocked): ?>
+        <span class="ok-txt">已解锁</span>
+      <?php elseif ($ck_need > 0): ?>
+        连续签到 <?= (int) $ck_need ?> 天解锁<?php if ($ck_streak < $ck_need): ?>（还差 <?= (int) max(0, $ck_need - $ck_streak) ?> 天）<?php endif; ?>
+      <?php else: ?>
+        未解锁
+      <?php endif; ?>
+    </div>
+  </div>
+  <?php if ($ck_next > 0 && $ck_next_bonus > 0): ?>
+    <div class="kv">
+      <div class="kk"><?= icon('check') ?>下一个里程碑</div>
+      <div class="vv">连续 <?= (int) $ck_next ?> 天，永久 +<?= h(num_h($ck_next_bonus)) ?> 次</div>
+    </div>
+  <?php endif; ?>
+  <?php if ($ck_today): ?>
+    <p class="hint">明天再来。临时额度当天有效、隔天清零；里程碑给的是永久额度。</p>
+  <?php else: ?>
+    <form method="post">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="action" value="checkin">
+      <button type="submit" class="btn btn-primary btn-wide">签到</button>
+    </form>
+  <?php endif; ?>
+</section>
+<?php endif; ?>
 
 <section class="card stat-card">
   <div class="stat-label">全站解析总量 · <?= h($scope) ?></div>

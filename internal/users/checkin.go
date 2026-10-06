@@ -7,11 +7,17 @@ import (
 )
 
 // checkinTempBonus is the temporary request allowance a single daily check-in
-// grants.  It is deliberately a few thousand requests: roughly a busy day of
-// browsing for one device, which is enough to be felt, but small next to a
-// subscription quota, so it rewards showing up without replacing the need to
-// subscribe.  The allowance is valid for the local day of the check-in only.
-const checkinTempBonus int64 = 3000
+// grants.  Ten thousand requests is a busy day for a household: enough to be
+// felt, and enough to carry an account that has run out through the rest of the
+// day, while staying below a subscription quota so that checking in rewards
+// showing up without replacing the need to subscribe.  The allowance is valid
+// for the local day of the check-in only.
+const checkinTempBonus int64 = 10000
+
+// logUnlockStreak is the number of consecutive check-in days that opens the
+// query log.  The log is the one page that shows what the devices are actually
+// asking for, so it is what a daily habit buys.
+const LogUnlockStreak int64 = 3
 
 // checkinMilestone is a streak length that grants a permanent request-quota
 // increase.
@@ -55,6 +61,17 @@ type CheckinStatus struct {
 	// NextMilestoneBonus is the permanent increase granted by
 	// [CheckinStatus.NextMilestone].
 	NextMilestoneBonus int64 `json:"next_milestone_bonus"`
+
+	// LogUnlocked is whether the account has earned access to the query log.
+	LogUnlocked bool `json:"log_unlocked"`
+
+	// LogUnlockStreak is the streak length that opens the log, so that a
+	// locked account can be told what it is working towards.
+	LogUnlockStreak int64 `json:"log_unlock_streak"`
+
+	// DailyBonus is the temporary allowance one check-in grants, so that the
+	// portal can say what checking in is worth before it is done.
+	DailyBonus int64 `json:"daily_bonus"`
 }
 
 // CheckinResult is what a successful check-in granted.
@@ -124,6 +141,26 @@ func milestoneFor(streak int64) (days, bonus int64) {
 	return 0, 0
 }
 
+// LogUnlocked reports whether the account has earned the query log by keeping
+// up a check-in streak.  An account that does not exist has not earned it.
+//
+// The unlock is kept once it is reached, so a broken streak does not take the
+// log away again.
+func (m *Manager) LogUnlocked(uid string) (ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.defs[uid]; !exists {
+		return false
+	}
+
+	if us := m.usage[uid]; us != nil {
+		return us.logUnlocked.Load()
+	}
+
+	return false
+}
+
 // CheckinStatus returns the daily check-in state of the account, or nil when
 // there is no such account.
 func (m *Manager) CheckinStatus(uid string) (st *CheckinStatus) {
@@ -136,11 +173,16 @@ func (m *Manager) CheckinStatus(uid string) (st *CheckinStatus) {
 
 	today := periodStart(m.now(), m.loc, PeriodDay)
 
-	st = &CheckinStatus{}
+	st = &CheckinStatus{
+		LogUnlockStreak: LogUnlockStreak,
+		DailyBonus:      checkinTempBonus,
+	}
+
 	if us := m.usage[uid]; us != nil {
 		st.Streak = us.streak.Load()
 		st.CheckedInToday = us.checkinDay.Load() == today
 		st.TempBonus = us.tempBonusOn(today)
+		st.LogUnlocked = us.logUnlocked.Load()
 	}
 
 	st.NextMilestone, st.NextMilestoneBonus = nextMilestone(st.Streak)
@@ -200,6 +242,13 @@ func (m *Manager) Checkin(uid string) (res *CheckinResult, err error) {
 	us.checkinDay.Store(today)
 	us.streak.Store(streak)
 	res.Streak = streak
+
+	// Reaching the streak that opens the log opens it for good.  An unlock
+	// that a single missed day could take back would punish the user for the
+	// very thing the log is for -- coming back to look at it.
+	if streak >= LogUnlockStreak {
+		us.logUnlocked.Store(true)
+	}
 
 	// The temporary allowance is granted for today only.  An account without a
 	// finite quota is left untouched: there is nothing to add to, and the

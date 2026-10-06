@@ -571,6 +571,59 @@ function pct($used, $limit): int
 }
 
 /**
+ * rank_figure 取榜单一条记录在当前口径下的解析量。
+ *
+ * 两个口径的数字在接口里是两个字段，选哪个由页面决定。PHP 不自己算，
+ * 免得「24 小时」和「累计」在两边各有一套定义。
+ */
+function rank_figure(array $e, string $order): int
+{
+    if ($order === 'total') {
+        return (int) ($e['total_requests'] ?? 0);
+    }
+
+    return (int) ($e['requests_24h'] ?? 0);
+}
+
+/**
+ * probe_owner 返回这台浏览器的匿名探测器标识，没有就生成一个。
+ *
+ * 未登录的访客也要能知道「手上这台设备有没有在用我们」，而探测器必须挂在
+ * 一个标识下面：登录时用账号，未登录时用这个。它只活在这台浏览器的会话里，
+ * 别人既猜不到也拿不到，所以查不出这台设备的结果。
+ */
+function probe_owner(): string
+{
+    if (empty($_SESSION['probe_owner'])) {
+        $_SESSION['probe_owner'] = bin2hex(random_bytes(16));
+    }
+
+    return (string) $_SESSION['probe_owner'];
+}
+
+/**
+ * probe_path 拼探测器接口的地址。
+ *
+ * 有会话就靠会话，AGHub 从会话里认出账号。没有会话就把这台浏览器的匿名标识
+ * 作为 owner 带上；AGHub 那边会要求同时出示对接令牌，否则任何人都能往探测器
+ * 表里塞东西。两者都没有就返回空串，调用方按「探测不了」处理。
+ */
+function probe_path(string $path, string $session, string $owner): string
+{
+    if ($session !== '') {
+        return $path;
+    }
+
+    if ($owner === '') {
+        return '';
+    }
+
+    $sep = strpos($path, '?') === false ? '?' : '&';
+
+    return $path . $sep . 'owner=' . rawurlencode($owner);
+}
+
+/**
  * probe_label 向 AGHub 申请一个探测器，返回要解析的第一个标签。
  *
  * 网页读不到系统的 DNS 设置，所以只能反过来：让设备去解析一个随机名字，
@@ -579,13 +632,14 @@ function pct($used, $limit): int
  *
  * 不走 fetch_all 的缓存 —— 探测器必须每次都是新的。
  */
-function probe_label(string $session): string
+function probe_label(string $session, string $owner = ''): string
 {
-    if ($session === '') {
+    $path = probe_path('/portal/api/probe', $session, $owner);
+    if ($path === '') {
         return '';
     }
 
-    $r = aghub('POST', '/portal/api/probe', array(), $session);
+    $r = aghub('POST', $path, array(), $session);
     if (!is_array($r) || empty($r['ok'])) {
         return '';
     }
@@ -606,15 +660,18 @@ function probe_label(string $session): string
  * 只回一个布尔。不比对地址：同一 WiFi 下所有设备共用一个出口地址，拿它当判据
  * 就会把别的设备算成这一台。随机信物本身已经能定位到具体是哪台设备。
  */
-function probe_status(string $label, string $session): array
+function probe_status(string $label, string $session, string $owner = ''): array
 {
     $miss = array('seen' => false);
 
-    if ($label === '' || $session === '') {
+    if ($label === '') {
         return $miss;
     }
 
-    $path = '/portal/api/probe/status?token=' . rawurlencode($label);
+    $path = probe_path('/portal/api/probe/status?token=' . rawurlencode($label), $session, $owner);
+    if ($path === '') {
+        return $miss;
+    }
 
     $r = aghub('GET', $path, null, $session);
     if (!is_array($r) || empty($r['ok'])) {

@@ -105,7 +105,8 @@ type UserStore interface {
 	// Ranking returns the busiest accounts.  The leaderboard shows it to
 	// everyone, signed in or not, so it must carry only what the board
 	// displays: a name, an identifier and a count.
-	Ranking(limit int) (r []users.RankEntry)
+	// order picks the figure the board is sorted by.
+	Ranking(limit int, order users.RankOrder) (r []users.RankEntry)
 
 	// ListFeedback returns the messages left by portal users, newest first.
 	// It is administrator-only: the portal itself never reads it back.
@@ -153,6 +154,10 @@ type UserStore interface {
 	// Checkin performs the daily check-in of the user and returns what it
 	// granted.  It is idempotent within a local day.
 	Checkin(uid string) (res *users.CheckinResult, err error)
+
+	// LogUnlocked reports whether the user has earned the query log by
+	// keeping up a check-in streak.
+	LogUnlocked(uid string) (ok bool)
 }
 
 // FilteringStatus is the state of the filter engine.

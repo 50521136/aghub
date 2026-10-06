@@ -59,6 +59,15 @@ type testUserStore struct {
 	// ranking is what Ranking returns.
 	ranking []users.RankEntry
 
+	// rankingOrder is the order Ranking was last called with.
+	rankingOrder users.RankOrder
+
+	// probeOwner is the owner RegisterProbe was last called with.
+	probeOwner string
+
+	// logUnlocked is what LogUnlocked reports.
+	logUnlocked bool
+
 	// feedback collects what AddFeedback stored.
 	feedback []*users.Feedback
 
@@ -89,11 +98,19 @@ func (s *testUserStore) CheckPortalToken(tok string) (ok bool) {
 	return s.portalToken != "" && tok == s.portalToken
 }
 
-func (s *testUserStore) Ranking(limit int) (r []users.RankEntry) {
+func (s *testUserStore) Ranking(limit int, order users.RankOrder) (r []users.RankEntry) {
+	s.rankingOrder = order
+
 	return s.ranking
 }
 
+func (s *testUserStore) LogUnlocked(uid string) (ok bool) {
+	return s.logUnlocked
+}
+
 func (s *testUserStore) RegisterProbe(uid string) (label string) {
+	s.probeOwner = uid
+
 	return "aghub-probe-test"
 }
 

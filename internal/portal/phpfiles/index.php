@@ -127,6 +127,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $flash_error = $r['error'];
         }
+    } elseif ($action === 'checkin') {
+        // 签到只做转发：送多少额度、连续几天、什么时候解锁日志，全部由 AGHub
+        // 判定。这边再抄一份规则，两边迟早会不一致。
+        if (session_token() === '') {
+            $flash_error = '请先登录再签到。';
+        } else {
+            $r = aghub('POST', '/portal/api/checkin', array(), session_token());
+
+            if (!empty($r['ok'])) {
+                $d = isset($r['data']) && is_array($r['data']) ? $r['data'] : array();
+                $days = isset($d['streak']) ? (int) $d['streak'] : 0;
+                $bonus = isset($d['temp_bonus']) ? (int) $d['temp_bonus'] : 0;
+                $perm = isset($d['permanent_bonus']) ? (int) $d['permanent_bonus'] : 0;
+
+                $flash_ok = '签到成功，已连续 ' . $days . ' 天。';
+                if ($bonus > 0) {
+                    $flash_ok .= '今天多了 ' . num_h($bonus) . ' 次额度。';
+                }
+
+                if ($perm > 0) {
+                    $flash_ok .= '达成 ' . $days . ' 天里程碑，永久 +' . num_h($perm) . ' 次。';
+                }
+            } else {
+                $flash_error = $r['error'];
+            }
+        }
     }
 }
 
@@ -155,6 +181,10 @@ if ($term !== '') {
     $log_q .= '&term=' . rawurlencode($term);
 }
 
+// 榜单有两种口径：近 24 小时和累计。默认 24 小时 —— 榜单是用来回答「现在谁
+// 在用」的，累计榜只会越来越慢地动。认不出的取值一律回到默认。
+$rank_order = (isset($_GET['order']) && (string) $_GET['order'] === 'total') ? 'total' : '24h';
+
 // 一页要问 AGHub 的三四个接口一次发出去，不要串行等。
 // 缓存键带上日志的查询条件，换搜索词或条数就是另一次查询。
 $want = array(
@@ -172,7 +202,10 @@ if ($logged && $page === 'me') {
     $want['avatars'] = array(array('GET', '/portal/api/avatar'), 300);
 }
 if ($page === 'ranking') {
-    $want['ranking'] = array(array('GET', '/portal/api/ranking?limit=30'), 60);
+    // 缓存键要带上口径，否则切到累计榜会读到 24 小时榜的缓存。
+    $want['ranking:' . $rank_order] = array(
+        array('GET', '/portal/api/ranking?limit=30&order=' . $rank_order), 60,
+    );
 }
 
 $got = fetch_all($want);
@@ -184,15 +217,19 @@ $cfg_r = $got['config']['v'];
 $site = (is_array($cfg_r) && !empty($cfg_r['ok'])) ? $cfg_r['data'] : array();
 
 $user = array();
+$checkin = array();
 $log = array();
 $log_at = 0;
 $log_fresh = true;
+$log_locked = false;
 
 if ($logged && isset($got['me'])) {
     $me = $got['me']['v'];
 
     if (!empty($me['ok'])) {
         $user = isset($me['data']['user']) && is_array($me['data']['user']) ? $me['data']['user'] : array();
+        $checkin = isset($me['data']['checkin']) && is_array($me['data']['checkin'])
+            ? $me['data']['checkin'] : array();
     } elseif ((int) $me['status'] === 401) {
         session_forget();
         $logged = false;
@@ -210,6 +247,10 @@ if ($logged && $page === 'log' && isset($got['log:' . md5($log_q)])) {
 
     if (is_array($r) && !empty($r['ok'])) {
         $log = isset($r['data']['data']) && is_array($r['data']['data']) ? $r['data']['data'] : array();
+    } elseif (is_array($r) && (int) ($r['status'] ?? 0) === 403) {
+        // 日志要签到够了才开。这不是出错，所以不进错误提示条 —— 页面上会直接
+        // 说清楚还差几天。
+        $log_locked = true;
     } elseif (is_array($r)) {
         $flash_error = (string) $r['error'];
     }
@@ -254,8 +295,12 @@ if ($probe_host !== '' && strpos($probe_host, '.') === false) {
     $probe_host = '';
 }
 
-if ($logged && $probe_host !== '') {
-    $probe_label = probe_label($session);
+// 未登录的访客同样值得知道「手上这台设备有没有在用我们」—— 那正是决定他要
+// 不要配一下的东西。所以未登录也发探测器，只是挂在浏览器的匿名标识下。
+$anon_owner = $logged ? '' : probe_owner();
+
+if ($probe_host !== '') {
+    $probe_label = probe_label($session, $anon_owner);
 }
 
 $domain = isset($public['domain']) ? (string) $public['domain'] : '';
@@ -280,7 +325,7 @@ if ($page === 'probe') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
 
-    $r = probe_status(isset($_GET['t']) ? (string) $_GET['t'] : '', $session);
+    $r = probe_status(isset($_GET['t']) ? (string) $_GET['t'] : '', $session, $anon_owner);
 
     echo json_encode($r, JSON_UNESCAPED_UNICODE);
     exit;

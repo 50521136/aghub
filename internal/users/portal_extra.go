@@ -21,6 +21,40 @@ const FeedbackFileName = "feedback.json"
 // growing without bound.
 const maxFeedback = 500
 
+// RankOrder is the figure a public leaderboard is sorted by.
+type RankOrder string
+
+const (
+	// RankBy24h sorts by the requests of the last 24 hours.  It is the
+	// default: a board of recent activity answers "who is using this right
+	// now", while the lifetime board only ever moves slowly.
+	RankBy24h RankOrder = "24h"
+
+	// RankByTotal sorts by the requests since the account was created.
+	RankByTotal RankOrder = "total"
+)
+
+// ParseRankOrder returns the order named by s, falling back to [RankBy24h] for
+// anything it does not recognize.  An unknown value must not be an error: the
+// board is a public page reached by links, and a stale one should show the
+// default rather than a failure.
+func ParseRankOrder(s string) (o RankOrder) {
+	if RankOrder(s) == RankByTotal {
+		return RankByTotal
+	}
+
+	return RankBy24h
+}
+
+// figure returns the number this order sorts by.
+func (o RankOrder) figure(e RankEntry) (n int64) {
+	if o == RankByTotal {
+		return e.TotalRequests
+	}
+
+	return e.Requests24h
+}
+
 // RankEntry is one row of the public leaderboard.
 type RankEntry struct {
 	// Rank is the position, starting at one.
@@ -38,6 +72,10 @@ type RankEntry struct {
 
 	// TotalRequests is the number of requests since the account was created.
 	TotalRequests int64 `json:"total_requests"`
+
+	// Requests24h is the number of requests of the last 24 hours.  It is the
+	// figure the default board is sorted by.
+	Requests24h int64 `json:"requests_24h"`
 
 	// Blocked is the number of queries that a filtering rule rejected.
 	Blocked int64 `json:"blocked"`
@@ -65,7 +103,12 @@ const minRankRequests = 1000
 // account on the board would be a list of people who are not being served.
 // Accounts with at most [minRankRequests] lifetime requests are left out as
 // well, so that the board shows the accounts that are actually being used.
-func (m *Manager) Ranking(limit int) (r []RankEntry) {
+//
+// order picks the figure the board is sorted by.  On the 24-hour board an
+// account with nothing in the window is left out rather than listed with a
+// zero: a list of recent activity should not be padded with accounts that have
+// none of it.
+func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -81,6 +124,10 @@ func (m *Manager) Ranking(limit int) (r []RankEntry) {
 			continue
 		}
 
+		if order == RankBy24h && i.Requests24h <= 0 {
+			continue
+		}
+
 		var id string
 		if len(i.IDs) > 0 {
 			id = i.IDs[0]
@@ -91,6 +138,7 @@ func (m *Manager) Ranking(limit int) (r []RankEntry) {
 			ID:            id,
 			Requests:      i.Requests,
 			TotalRequests: i.TotalRequests,
+			Requests24h:   i.Requests24h,
 			Blocked:       i.Blocked,
 			Passed:        i.Passed,
 			Avatar:        i.Avatar,
@@ -99,8 +147,8 @@ func (m *Manager) Ranking(limit int) (r []RankEntry) {
 	}
 
 	sort.Slice(r, func(a, b int) bool {
-		if r[a].TotalRequests != r[b].TotalRequests {
-			return r[a].TotalRequests > r[b].TotalRequests
+		if av, bv := order.figure(r[a]), order.figure(r[b]); av != bv {
+			return av > bv
 		}
 
 		// A stable tie-break keeps the board from reshuffling between two

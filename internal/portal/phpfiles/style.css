@@ -842,3 +842,22 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
 /* 榜单区块的容器。它跟 .card 一样是页面里的一个块，就得跟 .card 一样留出
    下边距 —— 漏了这条，最后一张卡会直接贴住下面的卡片。 */
 .rk-wrap { margin-bottom: 12px; }
+
+/* 榜单口径切换。两个口径是同一份榜单的两种排序，做成一组标签，
+   当前的那个实心，别让人以为是两个页面。 */
+.rk-tabs {
+  display: flex; gap: 8px; margin: 0 0 12px;
+}
+
+.rk-tab {
+  flex: 1 1 0; text-align: center; text-decoration: none;
+  font-size: 13px; font-weight: 600;
+  color: var(--fg2); background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--r-inner);
+  padding: 9px 0;
+}
+
+.rk-tab.on { color: #fff; background: var(--blue); border-color: var(--blue); }
+
+/* 卡片里整行的动作按钮，拇指够得到。 */
+.btn-wide { display: block; width: 100%; text-align: center; }

@@ -135,6 +135,16 @@ const (
 // historyDays is the number of days of per-user usage history that is kept.
 const historyDays = 30
 
+// hourSeconds is the length of one hourly request bucket.
+const hourSeconds = 3600
+
+// hoursWindow is the number of hourly buckets the rolling 24-hour figure is
+// summed over: the hour in progress plus the twenty-three before it.  The
+// window is aligned to hour boundaries rather than to the second the request
+// was made, which is precise enough for a leaderboard and keeps the request
+// path down to a single atomic add.
+const hoursWindow = 24
+
 // usage is the runtime usage state of a user.  It is persisted separately from
 // the user definition.
 type usage struct {
@@ -159,6 +169,20 @@ type usage struct {
 	// that dayCount belongs to.  Zero means that no bucket is open yet.
 	dayStart atomic.Int64
 
+	// hourCount is the number of requests counted in the hour bucket that
+	// hourStart points to.
+	hourCount atomic.Int64
+
+	// hourStart is the Unix timestamp of the start of the hour bucket that
+	// hourCount belongs to.  Zero means that no bucket is open yet.
+	hourStart atomic.Int64
+
+	// hours maps the Unix timestamp of an hour bucket to the number of
+	// requests made in it, for the buckets inside the 24-hour window.  Like
+	// history it is published as an immutable map so that readers never take
+	// a lock; the background flusher is the only writer.
+	hours atomic.Pointer[map[int64]int64]
+
 	// checkinDay is the Unix timestamp of the local midnight of the day of
 	// the last check-in.  Zero means that the account has never checked in.
 	checkinDay atomic.Int64
@@ -174,6 +198,10 @@ type usage struct {
 	// tempBonusDay is the Unix timestamp of the local midnight of the day
 	// tempBonus is valid for.  Zero means that no allowance is active.
 	tempBonusDay atomic.Int64
+
+	// logUnlocked is whether the account has earned the query log by keeping
+	// up a check-in streak.  It is never cleared once set.
+	logUnlocked atomic.Bool
 
 	// history maps a YYYY-MM-DD date to the number of requests made on that
 	// day.  It is published atomically as an immutable map so that readers
@@ -205,6 +233,17 @@ type usageState struct {
 	// has already been counted.
 	DayCount int64 `json:"day_count,omitempty"`
 
+	// HourStart is the Unix timestamp of the start of the hour bucket that is
+	// currently open.
+	HourStart int64 `json:"hour_start,omitempty"`
+
+	// HourCount is the number of requests counted in the open hour bucket.
+	HourCount int64 `json:"hour_count,omitempty"`
+
+	// Hours maps the Unix timestamp of an hour bucket to the number of
+	// requests made in it, for the buckets inside the 24-hour window.
+	Hours map[int64]int64 `json:"hours,omitempty"`
+
 	// CheckinDay is the Unix timestamp of the local midnight of the day of
 	// the last check-in.
 	CheckinDay int64 `json:"checkin_day,omitempty"`
@@ -219,6 +258,9 @@ type usageState struct {
 	// TempBonusDay is the Unix timestamp of the local midnight of the day
 	// TempBonus is valid for.
 	TempBonusDay int64 `json:"temp_bonus_day,omitempty"`
+
+	// LogUnlocked is whether the account has earned the query log.
+	LogUnlocked bool `json:"log_unlocked,omitempty"`
 
 	// History maps a YYYY-MM-DD date to the number of requests made on that
 	// day.
@@ -478,6 +520,7 @@ func (m *Manager) Start() {
 				m.mu.Lock()
 				m.refreshPeriodsLocked(now)
 				m.flushHistoryLocked(now)
+				m.flushHoursLocked(now)
 				m.mu.Unlock()
 
 				if m.dirty.Swap(false) {
@@ -928,6 +971,7 @@ func (m *Manager) AllowQuery(
 	e.usage.requests.Add(1)
 	e.usage.total.Add(1)
 	e.usage.dayCount.Add(1)
+	e.usage.hourCount.Add(1)
 	e.usage.lastSeen.Store(now)
 
 	m.dirty.Store(true)
@@ -1049,6 +1093,97 @@ func (m *Manager) flushHistoryLocked(now time.Time) {
 		// lost if the process does not shut down cleanly.
 		m.dirty.Store(true)
 	}
+}
+
+// flushHoursLocked rotates the hourly request buckets of the users and drops
+// the ones that left the 24-hour window.
+//
+// Like the day buckets, the rotation happens here rather than on the DNS
+// request path, so that path stays free of locks.  A request that lands in the
+// half minute after the hour turns is attributed to the hour that just ended,
+// which is invisible on a 24-hour figure.
+//
+// m.mu is expected to be held by the caller.
+func (m *Manager) flushHoursLocked(now time.Time) {
+	hour := hourStartOf(now)
+
+	for _, e := range m.usage {
+		start := e.hourStart.Load()
+		if start == hour {
+			continue
+		}
+
+		if start != 0 {
+			e.recordHour(start, e.hourCount.Swap(0))
+		}
+
+		// As with the day bucket, adopting the current hour without
+		// touching the counter keeps the requests counted since the last
+		// flush, which were made within this hour.
+		e.hourStart.Store(hour)
+
+		// The rotation alone makes the entry worth saving: the hour that
+		// ended has to reach the disk even if no request follows.
+		m.dirty.Store(true)
+	}
+}
+
+// hourStartOf returns the Unix timestamp of the start of the hour containing t.
+func hourStartOf(t time.Time) (start int64) {
+	return t.Unix() - t.Unix()%hourSeconds
+}
+
+// recordHour adds one closed hour to the ring and drops the hours that are now
+// outside the window.
+func (e *usage) recordHour(start, requests int64) {
+	next := map[int64]int64{start: requests}
+
+	if prev := e.hours.Load(); prev != nil {
+		for h, r := range *prev {
+			if _, ok := next[h]; !ok {
+				next[h] = r
+			}
+		}
+	}
+
+	cutoff := start - (hoursWindow-1)*hourSeconds
+	for h := range next {
+		if h < cutoff {
+			delete(next, h)
+		}
+	}
+
+	e.hours.Store(&next)
+}
+
+// requests24h returns the number of requests the user made within the last
+// [hoursWindow] hourly buckets, the hour in progress included.
+func (e *usage) requests24h(now time.Time) (n int64) {
+	current := hourStartOf(now)
+	cutoff := current - (hoursWindow-1)*hourSeconds
+
+	if h := e.hours.Load(); h != nil {
+		for start, r := range *h {
+			if start >= cutoff && start < current {
+				n += r
+			}
+		}
+	}
+
+	// The bucket in progress is counted live, so the figure moves as requests
+	// come in instead of only on the next rotation.  A bucket that was never
+	// opened counts as well: between the start of the process and the first
+	// rotation there is no hour to compare against, and the requests already
+	// counted were made within the hour that is running.
+	//
+	// A bucket that points at an older hour is left out: those requests are
+	// already in the ring, and counting them twice would be worse than the
+	// half minute of attribution the rotation costs.
+	if start := e.hourStart.Load(); start == current || start == 0 {
+		n += e.hourCount.Load()
+	}
+
+	return n
 }
 
 // recordHistory adds a day of usage to the history, publishing a new immutable
@@ -1186,6 +1321,9 @@ type Info struct {
 	// TotalRequests is the number of requests since creation.
 	TotalRequests int64 `json:"total_requests"`
 
+	// Requests24h is the number of requests of the last 24 hours.
+	Requests24h int64 `json:"requests_24h"`
+
 	// Blocked is the number of queries that a filtering rule rejected.
 	Blocked int64 `json:"blocked"`
 
@@ -1244,6 +1382,7 @@ func (m *Manager) info(e *entry) (i *Info) {
 		User:              u,
 		Requests:          e.usage.requests.Load(),
 		TotalRequests:     e.usage.total.Load(),
+		Requests24h:       e.usage.requests24h(m.now()),
 		Blocked:           e.usage.blocked.Load(),
 		Passed:            e.usage.passed.Load(),
 		PeriodStart:       e.usage.periodStart.Load(),

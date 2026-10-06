@@ -1,6 +1,9 @@
 <?php
 /**
- * 排行榜：按累计解析量排的榜单，未登录也能看。
+ * 排行榜：两个口径，近 24 小时和累计，默认 24 小时。
+ *
+ * 24 小时榜回答「现在谁在用」，累计榜回答「谁一直在用」。默认给前者 ——
+ * 累计榜的名次几天都不动，新来的人在上面看不到自己。
  *
  * 卡片式：每张卡是一个人，名次、头像、名字一行，解析量做进度条，下面跟
  * 拦截量和防误杀。比纯列表多花一点竖向空间，但手机上拇指扫过去能直接
@@ -10,6 +13,8 @@
 declare(strict_types=1);
 
 // 榜单在 index.php 里已经跟其它接口一起并发取回来了。
+
+$is24 = $rank_order !== 'total';
 
 // 找自己那一条，好高亮。
 $my_ids = $ids;
@@ -22,7 +27,7 @@ foreach ($entries as $e) {
         continue;
     }
 
-    $n = (int) ($e['total_requests'] ?? 0);
+    $n = rank_figure($e, $rank_order);
     if ($n > $peak) {
         $peak = $n;
     }
@@ -34,11 +39,18 @@ foreach ($entries as $e) {
         $my_entry = $e;
     }
 }
+
+$scope = $is24 ? '近 24 小时' : '累计';
 ?>
 <section class="hero">
   <h1>排行榜</h1>
   <p class="hero-sub">解析量超过 1000 才上榜，每 60 秒更新。</p>
 </section>
+
+<nav class="rk-tabs">
+  <a class="rk-tab<?= $is24 ? ' on' : '' ?>" href="<?= h(page_url('ranking', array('order' => '24h'))) ?>">近 24 小时</a>
+  <a class="rk-tab<?= $is24 ? '' : ' on' ?>" href="<?= h(page_url('ranking', array('order' => 'total'))) ?>">累计</a>
+</nav>
 
 <?php if ($shown === 0): ?>
   <section class="card">
@@ -49,6 +61,8 @@ foreach ($entries as $e) {
     <p class="hint">
       <?php if (is_array($rank_r) && empty($rank_r['ok'])): ?>
         读不到榜单。<?= h((string) $rank_r['error']) ?>
+      <?php elseif ($is24): ?>
+        最近 24 小时还没有解析量。设备接进来用一会儿，这里就会出现。
       <?php else: ?>
         榜单按累计解析量排，超过 1000 才会出现。设备接进来用一阵子就会上去。
       <?php endif; ?>
@@ -63,7 +77,7 @@ foreach ($entries as $e) {
 
 <section class="rk-wrap">
   <div class="rk-note">
-    <span>按累计解析量排序</span>
+    <span>按<?= h($scope) ?>解析量排序</span>
     <span class="rk-rule">解析量 > 1000 上榜</span>
   </div>
   <ol class="rk-list">
@@ -75,7 +89,7 @@ foreach ($entries as $e) {
 
         $rank = (int) ($e['rank'] ?? 0);
         $is_me = in_array((string) ($e['id'] ?? ''), $my_ids, true);
-        $n = (int) ($e['total_requests'] ?? 0);
+        $n = rank_figure($e, $rank_order);
         $blk = isset($e['blocked']) ? (int) $e['blocked'] : -1;
         $pas = isset($e['passed']) ? (int) $e['passed'] : -1;
 
@@ -93,7 +107,7 @@ foreach ($entries as $e) {
         <span class="rk-body">
           <span class="rk-line">
             <span class="rk-name"><?= h($name) ?><?= $is_me ? '<em>我</em>' : '' ?></span>
-            <span class="rk-total" title="<?= h(num_h($n)) ?>"><?= h(num_h($n)) ?><small>解析量</small></span>
+            <span class="rk-total" title="<?= h(num_h($n)) ?>"><?= h(num_h($n)) ?><small><?= h($scope) ?></small></span>
           </span>
           <span class="rk-bar"><i style="width:<?= $w ?>%"></i></span>
           <?php if ($blk >= 0 || $pas >= 0): ?>
@@ -113,12 +127,18 @@ foreach ($entries as $e) {
   <?php if ($my_rank > 0): ?>
     <div>
       <h2>你在第 <?= (int) $my_rank ?> 名</h2>
-      <p class="hint">累计 <?= h(num_h((int) ($my_entry['total_requests'] ?? 0))) ?> 次解析。</p>
+      <p class="hint"><?= h($scope) ?> <?= h(num_h(rank_figure($my_entry, $rank_order))) ?> 次解析。</p>
     </div>
   <?php else: ?>
     <div>
       <h2>你还没上榜</h2>
-      <p class="hint">解析量超过 1000 就会上去，用起来就行。</p>
+      <p class="hint">
+        <?php if ($is24): ?>
+          最近 24 小时还没有你的解析量，设备用一会儿就会上去。
+        <?php else: ?>
+          解析量超过 1000 就会上去，用起来就行。
+        <?php endif; ?>
+      </p>
     </div>
   <?php endif; ?>
   <a class="btn" href="<?= h(page_url('log')) ?>">看我的日志</a>

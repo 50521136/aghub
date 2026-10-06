@@ -98,12 +98,15 @@ func (m *Manager) handleProbe(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	u, ok := m.requireUser(w, r)
+	owner, ok := m.probeOwner(r)
 	if !ok {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest,
+			"a probe without a session needs the portal token and an owner")
+
 		return
 	}
 
-	label := m.users.RegisterProbe(u.UID)
+	label := m.users.RegisterProbe(owner)
 	if label == "" {
 		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusInternalServerError,
 			"issuing probe")
@@ -136,8 +139,11 @@ func (m *Manager) handleProbeStatus(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	u, ok := m.requireUser(w, r)
+	owner, ok := m.probeOwner(r)
 	if !ok {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest,
+			"a probe without a session needs the portal token and an owner")
+
 		return
 	}
 
@@ -154,13 +160,81 @@ func (m *Manager) handleProbeStatus(w http.ResponseWriter, r *http.Request) {
 	// the page load that issued it, so a match is this device by construction
 	// and no address comparison is needed -- which is just as well, since
 	// every device behind one NAT shares an address.
-	hit, found := m.users.ProbeStatus(u.UID, label)
+	hit, found := m.users.ProbeStatus(owner, label)
 	if found {
 		resp.Seen = true
 		resp.Hit = hit
 	}
 
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, resp)
+}
+
+// anonymousProbePrefix separates the probe keys of visitors who have not signed
+// in from the account identifiers.  Without it, an anonymous caller could name
+// somebody else's account and read that account's probe.
+const anonymousProbePrefix = "anon:"
+
+// probeOwner returns the key a probe is registered under, and false when the
+// request may not have one.
+//
+// A signed-in request uses its account.  A request without a session uses the
+// opaque owner the portal passes, and is only accepted with a valid portal
+// token: the probe table is bounded by a three-minute expiry, and an endpoint
+// that lets anyone add to it would be a way to keep it full.
+func (m *Manager) probeOwner(r *http.Request) (owner string, ok bool) {
+	if u := m.optionalUser(r); u != nil {
+		return u.UID, true
+	}
+
+	if !m.users.CheckPortalToken(portalTokenOf(r)) {
+		return "", false
+	}
+
+	anon := strings.TrimSpace(r.URL.Query().Get("owner"))
+	if !isValidProbeOwner(anon) {
+		return "", false
+	}
+
+	return anonymousProbePrefix + anon, true
+}
+
+// optionalUser returns the signed-in user, or nil when the request carries no
+// usable session.  Unlike [Manager.requireUser] it writes nothing, so it can be
+// used where being signed out is allowed.
+func (m *Manager) optionalUser(r *http.Request) (u *users.User) {
+	tok := m.sessionToken(r)
+	if isZeroToken(tok) {
+		return nil
+	}
+
+	return m.Authenticate(r.Context(), tok)
+}
+
+// isValidProbeOwner reports whether s may be used as the owner key of an
+// anonymous probe.  The portal generates it, but it arrives over the network
+// and ends up in a map key, so it is checked rather than trusted.
+func isValidProbeOwner(s string) (ok bool) {
+	const (
+		minLen = 16
+		maxLen = 64
+	)
+
+	if len(s) < minLen || len(s) > maxLen {
+		return false
+	}
+
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z',
+			c >= 'A' && c <= 'Z',
+			c >= '0' && c <= '9',
+			c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 // feedbackListResponse is the response of the GET /control/portal/feedback HTTP
@@ -704,10 +778,11 @@ func (m *Manager) handleRanking(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries := m.users.Ranking(limit)
+	order := users.ParseRankOrder(r.URL.Query().Get("order"))
 
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &rankingResponse{
-		Entries: entries,
+		Entries: m.users.Ranking(limit, order),
+		Order:   order,
 		Updated: time.Now().Unix(),
 	})
 }
@@ -716,6 +791,10 @@ func (m *Manager) handleRanking(w http.ResponseWriter, r *http.Request) {
 type rankingResponse struct {
 	// Entries are the rows of the board, best first.
 	Entries []users.RankEntry `json:"entries"`
+
+	// Order is the figure the board was sorted by, which is what the caller
+	// asked for or the default when it asked for nothing usable.
+	Order users.RankOrder `json:"order"`
 
 	// Updated is the Unix timestamp of the response.
 	Updated int64 `json:"updated"`
@@ -979,6 +1058,16 @@ func (m *Manager) handleLog(w http.ResponseWriter, r *http.Request) {
 
 	u, ok := m.requireUser(w, r)
 	if !ok {
+		return
+	}
+
+	// The log is what a check-in streak buys.  An account that has not earned
+	// it yet is told so rather than shown an empty list, which would read as
+	// a page that is broken.
+	if !m.users.LogUnlocked(u.UID) {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusForbidden,
+			"the query log opens after %d consecutive check-in days", users.LogUnlockStreak)
+
 		return
 	}
 

@@ -77,7 +77,7 @@ func TestRankingMinRequests(t *testing.T) {
 	m.RecordResult("big", true, false)
 	m.RecordResult("big", false, true)
 
-	r := m.Ranking(0)
+	r := m.Ranking(0, RankByTotal)
 	require.Len(t, r, 1, "an account with exactly the minimum must be left out")
 	assert.Equal(t, "big", r[0].Name)
 	assert.Equal(t, int64(minRankRequests+1), r[0].TotalRequests)

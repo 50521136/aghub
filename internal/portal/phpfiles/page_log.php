@@ -4,6 +4,9 @@
  *
  * 这一页是「翻来覆去看」的典型，所以结果缓存 30 秒：切来切去不会再打 AGHub
  * 一次。要最新的点「刷新」，会跳过缓存重新取。
+ *
+ * 日志要连续签到够了才开 —— 它是唯一能看到设备在问什么的页面，也正是天天
+ * 来签到的回报。没开的时候说清楚还差几天，不要假装「没有记录」。
  */
 
 declare(strict_types=1);
@@ -16,7 +19,34 @@ if ($limit < 20 || $limit > 200) {
 
 $count = count($log);
 $age = $log_at > 0 ? max(0, time() - $log_at) : 0;
+
+$lk_streak = (int) ($checkin['streak'] ?? 0);
+$lk_need = (int) ($checkin['log_unlock_streak'] ?? 0);
+$lk_daily = (int) ($checkin['daily_bonus'] ?? 0);
 ?>
+
+<?php if ($log_locked): ?>
+<section class="hero">
+  <h1>查询日志</h1>
+  <p class="hero-sub">连续签到 <?= (int) $lk_need ?> 天开启。</p>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>还差 <?= (int) max(0, $lk_need - $lk_streak) ?> 天</h2>
+    <span class="card-note">现在连续 <?= (int) $lk_streak ?> 天</span>
+  </div>
+  <p class="hint">
+    日志是唯一能看到设备在问什么的页面，所以它跟着签到走：连续签到
+    <b><?= (int) $lk_need ?> 天</b>就打开，之后一直有效 —— 断了一天不会收回去。
+  </p>
+  <?php if ($lk_daily > 0): ?>
+    <p class="hint">每天签到还会临时多 <?= h(num_h($lk_daily)) ?> 次解析额度，当天有效。</p>
+  <?php endif; ?>
+  <a class="btn btn-primary btn-wide" href="<?= h(page_url()) ?>">去签到</a>
+</section>
+<?php else: ?>
+
 <section class="hero">
   <div class="hero-row">
     <div>
@@ -114,4 +144,6 @@ $age = $log_at > 0 ? max(0, time() - $log_at) : 0;
     </article>
   <?php endforeach; ?>
 </section>
+<?php endif; ?>
+
 <?php endif; ?>
