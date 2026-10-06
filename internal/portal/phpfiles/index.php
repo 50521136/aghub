@@ -138,7 +138,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash_ok = '注册成功，用刚才的用户名登录即可。';
             $page = 'me';
         } else {
-            $flash_error = register_error($r);
+            $flash_error = verify_error($r, '注册失败，请稍后再试。');
+        }
+    } elseif ($action === 'email') {
+        // 绑邮箱和注册用的是同一套验证码。空地址就是解绑 —— 接口那边不需要
+        // 验证码，因为解绑不泄露任何东西。
+        //
+        // 判登录要用 session_token()：$logged 是后面「取数据」那一段才算出来的，
+        // 动作块里读它永远是 null，于是登录着的人也会被告知「请先登录」。
+        if (session_token() === '') {
+            $flash_error = '请先登录。';
+        } else {
+            $addr = trim(isset($_POST['email']) ? (string) $_POST['email'] : '');
+            $code = trim(isset($_POST['code']) ? (string) $_POST['code'] : '');
+
+            $r = aghub('POST', '/portal/api/email', array(
+                'email' => $addr,
+                'code'  => $code,
+            ), session_token());
+
+            if (!empty($r['ok'])) {
+                $flash_ok = $addr === '' ? '已解除邮箱绑定。' : '邮箱已更新。';
+            } else {
+                $flash_error = verify_error($r, '保存失败，请稍后再试。');
+            }
         }
     } elseif ($action === 'checkin') {
         // 签到只做转发：送多少额度、连续几天、什么时候解锁日志，全部由 AGHub
@@ -223,10 +246,10 @@ if ($page === 'ranking') {
 
 $got = fetch_all($want);
 
-$pub_r = $got['public']['v'];
+$pub_r = isset($got['public']) ? $got['public']['v'] : array();
 $public = (is_array($pub_r) && !empty($pub_r['ok'])) ? $pub_r['data'] : array();
 
-$cfg_r = $got['config']['v'];
+$cfg_r = isset($got['config']) ? $got['config']['v'] : array();
 $site = (is_array($cfg_r) && !empty($cfg_r['ok'])) ? $cfg_r['data'] : array();
 
 $user = array();
@@ -282,7 +305,7 @@ if (is_array($ava_r) && !empty($ava_r['ok'])) {
     }
 }
 
-$rank_r = isset($got['ranking']) ? $got['ranking']['v'] : array();
+$rank_r = isset($got['ranking:' . $rank_order]) ? $got['ranking:' . $rank_order]['v'] : array();
 $entries = array();
 if (is_array($rank_r) && !empty($rank_r['ok'])) {
     $entries = isset($rank_r['data']['entries']) && is_array($rank_r['data']['entries'])
@@ -428,6 +451,13 @@ if ($page === 'ios') {
 // ------------------------------------------------------------------ 渲染
 
 $title = (string) cfg('title', 'DNS 服务');
+
+// 标题里的页面名。导航表只有四个标签页，日志和注册挂在它们下面，所以不能直接
+// 查 $nav[$page] —— 查不到就是一条 PHP 通知（页面照样出，日志里全是噪音）。
+$extra_title = array('log' => '查询日志', 'register' => '注册', 'ios' => '接入');
+$page_label = isset($nav[$page]['label'])
+    ? (string) $nav[$page]['label']
+    : (isset($extra_title[$page]) ? $extra_title[$page] : (string) $nav[$tab]['label']);
 $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SERVER['HTTP_HOST'] : '');
 ?>
 <!DOCTYPE html>
@@ -436,7 +466,7 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#eef4fd">
-<title><?= h($title) ?> · <?= h($nav[$page]['label']) ?></title>
+<title><?= h($title) ?> · <?= h($page_label) ?></title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 7l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9v-6z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="<?= h(asset('style.css')) ?>">
 </head>
@@ -467,7 +497,7 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
   <?php endif; ?>
   <?php if (empty($public)): ?>
     <div class="alert bad">
-      读不到 AGHub 的数据。<?= h(is_array($pub_r) ? (string) $pub_r['error'] : '') ?>
+      读不到 AGHub 的数据。<?= h(isset($pub_r['error']) ? (string) $pub_r['error'] : '') ?>
       <br>检查 config.php 里的 <code>aghub_url</code> 和 <code>token</code>。
     </div>
   <?php endif; ?>

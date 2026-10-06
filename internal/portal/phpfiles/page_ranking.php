@@ -59,8 +59,11 @@ $scope = $is24 ? '近 24 小时' : '累计';
       <span class="card-note">解析量 > 1000</span>
     </div>
     <p class="hint">
-      <?php if (is_array($rank_r) && empty($rank_r['ok'])): ?>
-        读不到榜单。<?= h((string) $rank_r['error']) ?>
+      <?php if (!is_array($rank_r) || !isset($rank_r['ok']) || empty($rank_r['ok'])): ?>
+        <?php /* 三种情况都要说清楚，而且不能去访问不存在的键 —— 之前这里
+                 直接读 $rank_r['error']，取不到数据时页面会蹦一条 PHP 警告。 */ ?>
+        读不到榜单。<?= h(isset($rank_r['error']) && $rank_r['error'] !== ''
+            ? (string) $rank_r['error'] : '稍后再试。') ?>
       <?php elseif ($is24): ?>
         最近 24 小时还没有解析量。设备接进来用一会儿，这里就会出现。
       <?php else: ?>

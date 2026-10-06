@@ -23,6 +23,10 @@ $p = $unlimited ? 0 : pct($used, $limit);
 $bar = $p >= 90 ? ' danger' : ($p >= 70 ? ' warn' : '');
 $period = (string) ($user['period'] ?? 'day');
 
+// 邮箱：当前地址和验证状态显示在「账号」卡里，换绑在 ?view=email 里。
+$me_mail = isset($user['email']) ? trim((string) $user['email']) : '';
+$me_mail_ok = !empty($user['email_verified']);
+
 $dot = dot_host($primary_id, $domain);
 $client = isset($user['client']) && is_array($user['client']) ? $user['client'] : array();
 ?>
@@ -141,8 +145,46 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
     <a class="quick-item" href="<?= h(page_url('ranking')) ?>"><?= icon('trophy') ?><span>排行榜</span></a>
     <a class="quick-item" href="<?= h(page_url('feedback')) ?>"><?= icon('feedback') ?><span>反馈</span></a>
     <a class="quick-item" href="<?= h(page_url('me', array('view' => 'password'))) ?>"><?= icon('key') ?><span>改密码</span></a>
+    <a class="quick-item" href="<?= h(page_url('me', array('view' => 'email'))) ?>"><?= icon('send') ?><span>邮箱</span></a>
   </div>
 </section>
+
+<?php if (isset($_GET['view']) && $_GET['view'] === 'email'): ?>
+<section class="card">
+  <div class="card-head">
+    <h2><?= $me_mail !== '' ? '更换邮箱' : '绑定邮箱' ?></h2>
+    <span class="card-note"><?= $me_mail !== '' ? h($me_mail) : '还没绑' ?></span>
+  </div>
+  <p class="hint">
+    要换的地址得真能收信 —— 验证码发过去，填回来才算数。
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="email">
+    <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+    <label><span>新邮箱</span>
+      <input type="email" name="email" autocomplete="email" maxlength="254" required></label>
+    <label><span>验证码</span>
+      <span class="field-row">
+        <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="6" pattern="[0-9]{6}" placeholder="6 位数字" required>
+        <button type="button" class="btn" data-code-btn
+                data-csrf="<?= h(csrf_token()) ?>">获取验证码</button>
+      </span>
+    </label>
+    <p class="hint" data-code-hint>点「获取验证码」，邮件里会有 6 位数字，15 分钟内有效。</p>
+    <button type="submit" class="btn btn-primary btn-block">保存</button>
+  </form>
+  <?php if ($me_mail !== ''): ?>
+    <?php /* 解绑不需要验证码：解绑不泄露任何东西，也就不必证明地址是你的。 */ ?>
+    <form method="post">
+      <input type="hidden" name="action" value="email">
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="email" value="">
+      <button type="submit" class="btn">解除绑定</button>
+    </form>
+  <?php endif; ?>
+</section>
+<?php endif; ?>
 
 <?php if (isset($_GET['view']) && $_GET['view'] === 'password'): ?>
 <section class="card">
@@ -164,6 +206,21 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
 <section class="card">
   <div class="card-head"><h2>账号</h2></div>
   <div class="kv"><div class="kk">用户名</div><div class="vv"><?= h((string) ($user['name'] ?? '')) ?></div></div>
+  <div class="kv">
+    <div class="kk"><?= icon('send') ?>邮箱</div>
+    <div class="vv">
+      <?php if ($me_mail === ''): ?>
+        未绑定
+      <?php else: ?>
+        <?= h($me_mail) ?>
+        <?php if ($me_mail_ok): ?>
+          <span class="tag tag-ok">已验证</span>
+        <?php else: ?>
+          <span class="tag">未验证</span>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+  </div>
   <div class="kv"><div class="kk">建立时间</div><div class="vv"><?= h(when_h((int) ($user['created_at'] ?? 0))) ?></div></div>
   <div class="kv"><div class="kk">到期时间</div>
     <div class="vv"><?= (int) ($user['expires_at'] ?? 0) > 0 ? h(when_h((int) $user['expires_at'])) : '长期有效' ?></div>

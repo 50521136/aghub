@@ -575,12 +575,15 @@ function pct($used, $limit): int
 }
 
 /**
- * register_error 把注册接口的错误翻成中文。
+ * verify_error 把「要邮箱验证码的账号操作」的错误翻成中文。
  *
- * 验证码那一条尤其要翻：接口只会说「验证码无效或已过期」，而用户很可能压根
- * 没收到过码。照抄原文，人会以为是自己填错了。
+ * 注册和绑定邮箱走的是同一套判定，所以共用一份。验证码那一条尤其要翻：
+ * 接口只会说「验证码无效或已过期」，而用户很可能压根没收到过码。照抄英文
+ * 原文，人会以为是自己填错了。
+ *
+ * $fallback 是认不出来的情况下的兜底文案，两个入口各说各的。
  */
-function register_error($r): string
+function verify_error($r, string $fallback): string
 {
     $err = is_array($r) && isset($r['error']) ? (string) $r['error'] : '';
     $status = is_array($r) ? (int) ($r['status'] ?? 0) : 0;
@@ -596,14 +599,14 @@ function register_error($r): string
     }
 
     if (strpos($hay, 'already') !== false) {
-        return '这个邮箱或用户名已经注册过了。';
+        return '这个邮箱或用户名已经被占用了。';
     }
 
     if ($status === 429) {
         return '操作太频繁，等一会儿再试。';
     }
 
-    return $err !== '' ? $err : '注册失败，请稍后再试。';
+    return $err !== '' ? $err : $fallback;
 }
 
 /**
