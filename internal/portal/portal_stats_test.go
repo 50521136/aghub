@@ -35,6 +35,11 @@ func TestPublicStatsWithStats(t *testing.T) {
 	assert.Equal(t, int64(100), s.Queries24h)
 	assert.Equal(t, int64(20), s.Blocked24h)
 	assert.Equal(t, int64(3), s.Passed24h)
+
+	// The cumulative figures are the fallback the page shows when the 24-hour
+	// ones are missing, so they must be reported alongside them.
+	assert.Equal(t, int64(7), s.Passed)
+	assert.Zero(t, s.Blocked)
 }
 
 // TestPublicStatsWithoutStats checks that a deployment without the statistics
@@ -52,4 +57,9 @@ func TestPublicStatsWithoutStats(t *testing.T) {
 	assert.Zero(t, s.Queries24h)
 	assert.Zero(t, s.Blocked24h)
 	assert.Zero(t, s.Passed24h)
+
+	// The cumulative figures are what the page falls back to, so they carry
+	// the real numbers when the module is absent.
+	assert.Equal(t, int64(7), s.Passed)
+	assert.Zero(t, s.Blocked)
 }

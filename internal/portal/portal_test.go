@@ -61,6 +61,19 @@ type testUserStore struct {
 
 	// feedback collects what AddFeedback stored.
 	feedback []*users.Feedback
+
+	// checkin is what CheckinStatus reports.  A nil value stands for an
+	// account that has never checked in.
+	checkin *users.CheckinStatus
+
+	// checkinResult is what Checkin returns.
+	checkinResult *users.CheckinResult
+
+	// checkinErr is returned by Checkin when it is set.
+	checkinErr error
+
+	// checkinCalls counts the Checkin calls.
+	checkinCalls int
 }
 
 // Summary implements the [UserStore] interface.
@@ -990,8 +1003,9 @@ func TestPublicStatsHasNoAccountFields(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 
 	want := []string{
-		"accounts", "active", "blocked_24h", "custom_rules", "domain", "lists",
-		"passed_24h", "protected", "queries", "queries_24h", "rules",
+		"accounts", "active", "blocked", "blocked_24h", "custom_rules", "domain",
+		"lists", "passed", "passed_24h", "protected", "queries", "queries_24h",
+		"rules",
 	}
 	keys := make([]string, 0, len(got))
 	for k := range got {

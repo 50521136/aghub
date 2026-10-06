@@ -32,12 +32,19 @@ foreach ($history as $p) {
 $points = array_slice($points, -7, 7, true);
 ?>
 <?php
-// 近 24 小时的全站数据。统计模块没开时这几个键会缺席，那就整块不显示 ——
-// 显示一排 0 比不显示更糟，看起来像「什么都没拦」。
-$q24 = isset($public['queries_24h']) ? (int) $public['queries_24h'] : -1;
-$b24 = isset($public['blocked_24h']) ? (int) $public['blocked_24h'] : 0;
-$p24 = isset($public['passed_24h']) ? (int) $public['passed_24h'] : 0;
-$rate = $q24 > 0 ? (int) round($b24 * 100 / $q24) : 0;
+// 全站数据。统计模块没开时近 24 小时的三个键会缺席 —— 那就退回累计口径，
+// 并把标题改成「累计」，而不是把整块藏起来。
+//
+// 早先的做法是拿不到 24 小时数据就整块不显示，理由是「一排 0 看起来像什么都
+// 没拦」。但整块消失更糟：用户看到的是页面缺了一块，只会当成坏了。缺数据就
+// 说清缺的是什么，别把信息藏掉。
+$has24 = isset($public['queries_24h']);
+
+$q = $has24 ? (int) $public['queries_24h'] : (int) ($public['queries'] ?? 0);
+$b = $has24 ? (int) $public['blocked_24h'] : (int) ($public['blocked'] ?? 0);
+$p = $has24 ? (int) $public['passed_24h'] : (int) ($public['passed'] ?? 0);
+$rate = $q > 0 ? (int) round($b * 100 / $q) : 0;
+$scope = $has24 ? '近 24 小时' : '累计';
 ?>
 
 <section class="hero">
@@ -49,8 +56,10 @@ $rate = $q24 > 0 ? (int) round($b24 * 100 / $q24) : 0;
         <span class="pill pill-wait" data-probe-pill data-probe-label="<?= h($probe_label) ?>">
           <?= icon('info') ?><span data-probe-text>检测中</span>
         </span>
+        <?php /* referrerpolicy 不能省：少了它，浏览器会把门户地址放进 Referer
+                 头送给探测域名，等于换个方式又泄露一次。 */ ?>
         <img class="probe-img" src="https://<?= h($probe_label . '.' . $probe_host) ?>/p.png"
-             width="1" height="1" alt="">
+             width="1" height="1" alt="" referrerpolicy="no-referrer">
       <?php else: ?>
         <span class="pill pill-idle"><?= icon('info') ?>未接入</span>
       <?php endif; ?>
@@ -67,18 +76,17 @@ $rate = $q24 > 0 ? (int) round($b24 * 100 / $q24) : 0;
   </p>
 </section>
 
-<?php if ($q24 >= 0): ?>
 <section class="card stat-card">
-  <div class="stat-label">全站解析总量 · 近 24 小时</div>
-  <div class="stat-big" title="<?= h(num_h($q24)) ?>"><?= h(num_h($q24)) ?></div>
+  <div class="stat-label">全站解析总量 · <?= h($scope) ?></div>
+  <div class="stat-big" title="<?= h(num_h($q)) ?>"><?= h(num_h($q)) ?></div>
   <div class="stat-lines">
     <div class="stat-line">
       <span class="sl-k">已过滤广告</span>
-      <span class="sl-v"><?= h(num_h($b24)) ?> 次</span>
+      <span class="sl-v"><?= h(num_h($b)) ?> 次</span>
     </div>
     <div class="stat-line">
       <span class="sl-k">防误杀放行</span>
-      <span class="sl-v"><?= h(num_h($p24)) ?> 次</span>
+      <span class="sl-v"><?= h(num_h($p)) ?> 次</span>
     </div>
     <div class="stat-line">
       <span class="sl-k">拦截率</span>
@@ -98,7 +106,6 @@ $rate = $q24 > 0 ? (int) round($b24 * 100 / $q24) : 0;
     </div>
   </div>
 </section>
-<?php endif; ?>
 
 <?php if ($logged && $points !== array()): ?>
 <section class="card">

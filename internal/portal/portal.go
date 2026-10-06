@@ -145,6 +145,14 @@ type UserStore interface {
 	// SetAvatar sets the avatar preset of the user.  Only a value from
 	// [users.AvatarPresets] is accepted.
 	SetAvatar(uid, avatar string) (err error)
+
+	// CheckinStatus returns the daily check-in state of the user, or nil when
+	// there is no such user.
+	CheckinStatus(uid string) (st *users.CheckinStatus)
+
+	// Checkin performs the daily check-in of the user and returns what it
+	// granted.  It is idempotent within a local day.
+	Checkin(uid string) (res *users.CheckinResult, err error)
 }
 
 // FilteringStatus is the state of the filter engine.

@@ -159,6 +159,22 @@ type usage struct {
 	// that dayCount belongs to.  Zero means that no bucket is open yet.
 	dayStart atomic.Int64
 
+	// checkinDay is the Unix timestamp of the local midnight of the day of
+	// the last check-in.  Zero means that the account has never checked in.
+	checkinDay atomic.Int64
+
+	// streak is the number of consecutive days the account has checked in.
+	// It restarts at one when a day is missed.
+	streak atomic.Int64
+
+	// tempBonus is the temporary request allowance granted by the check-in of
+	// tempBonusDay.  It is added to the quota of that day only.
+	tempBonus atomic.Int64
+
+	// tempBonusDay is the Unix timestamp of the local midnight of the day
+	// tempBonus is valid for.  Zero means that no allowance is active.
+	tempBonusDay atomic.Int64
+
 	// history maps a YYYY-MM-DD date to the number of requests made on that
 	// day.  It is published atomically as an immutable map so that readers
 	// never take a lock.  The background flusher is the only writer.
@@ -188,6 +204,21 @@ type usageState struct {
 	// is persisted so that a restart does not lose the part of the day that
 	// has already been counted.
 	DayCount int64 `json:"day_count,omitempty"`
+
+	// CheckinDay is the Unix timestamp of the local midnight of the day of
+	// the last check-in.
+	CheckinDay int64 `json:"checkin_day,omitempty"`
+
+	// Streak is the number of consecutive check-in days.
+	Streak int64 `json:"streak,omitempty"`
+
+	// TempBonus is the temporary request allowance granted by the check-in of
+	// TempBonusDay.
+	TempBonus int64 `json:"temp_bonus,omitempty"`
+
+	// TempBonusDay is the Unix timestamp of the local midnight of the day
+	// TempBonus is valid for.
+	TempBonusDay int64 `json:"temp_bonus_day,omitempty"`
 
 	// History maps a YYYY-MM-DD date to the number of requests made on that
 	// day.
@@ -874,7 +905,22 @@ func (m *Manager) AllowQuery(
 			e.usage.requests.Store(0)
 		}
 
-		if e.usage.requests.Load() >= u.RequestLimit {
+		limit := u.RequestLimit
+		if limit > 0 {
+			// The check-in allowance is valid for one local day.  For the
+			// common per-day quota that day is the period itself, so the
+			// boundary that was already fetched above is reused.  A longer
+			// period does not reset daily, but the allowance still expires
+			// with the day, so its own boundary is looked up.
+			today := start
+			if u.Period != PeriodDay {
+				today = m.periodStartOf(PeriodDay)
+			}
+
+			limit += e.usage.tempBonusOn(today)
+		}
+
+		if e.usage.requests.Load() >= limit {
 			return false, ReasonQuota
 		}
 	}
@@ -1186,6 +1232,14 @@ func (m *Manager) info(e *entry) (i *Info) {
 	u := e.user
 	now := m.now().Unix()
 
+	// The temporary check-in allowance is part of the quota of the day it was
+	// granted for, so the remaining count and the over-quota status must use
+	// the same effective limit as [Manager.AllowQuery] does.
+	limit := u.RequestLimit
+	if limit > 0 {
+		limit += e.usage.tempBonusOn(periodStart(m.now(), m.loc, PeriodDay))
+	}
+
 	i = &Info{
 		User:              u,
 		Requests:          e.usage.requests.Load(),
@@ -1206,7 +1260,7 @@ func (m *Manager) info(e *entry) (i *Info) {
 	}
 
 	if u.RequestLimit >= 0 {
-		i.RemainingRequests = max(0, u.RequestLimit-i.Requests)
+		i.RemainingRequests = max(0, limit-i.Requests)
 	} else {
 		i.RemainingRequests = Unlimited
 	}
@@ -1218,7 +1272,7 @@ func (m *Manager) info(e *entry) (i *Info) {
 	case u.ExpiresAt > 0 && now >= u.ExpiresAt:
 		i.Status = StatusExpired
 		i.DisabledReason = ReasonExpired
-	case u.RequestLimit >= 0 && i.Requests >= u.RequestLimit:
+	case u.RequestLimit >= 0 && i.Requests >= limit:
 		i.Status = StatusOverQuota
 		i.DisabledReason = ReasonQuota
 	case u.ExpiresAt > 0 && i.RemainingSeconds <= expiringSoonThreshold:

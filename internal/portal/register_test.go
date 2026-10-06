@@ -27,8 +27,8 @@ func TestRegisterNoDuplicatePaths(t *testing.T) {
 		m.Register(reg)
 	})
 
-	// The avatar path serves both verbs through one handler, since the mux
-	// cannot tell them apart.  Both must still reach something.
+	// The paths that serve both verbs through one handler, because the mux
+	// cannot tell them apart, must still reach something for each verb.
 	for _, tc := range []struct {
 		name   string
 		method string
@@ -43,6 +43,16 @@ func TestRegisterNoDuplicatePaths(t *testing.T) {
 		name:   "set without session",
 		method: http.MethodPost,
 		path:   "/portal/api/avatar",
+		want:   http.StatusUnauthorized,
+	}, {
+		name:   "checkin status without session",
+		method: http.MethodGet,
+		path:   "/portal/api/checkin",
+		want:   http.StatusUnauthorized,
+	}, {
+		name:   "checkin without session",
+		method: http.MethodPost,
+		path:   "/portal/api/checkin",
 		want:   http.StatusUnauthorized,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {

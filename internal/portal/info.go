@@ -258,6 +258,18 @@ type PublicStats struct {
 	Blocked24h int64 `json:"blocked_24h"`
 	Passed24h  int64 `json:"passed_24h"`
 
+	// Blocked is the cumulative number of queries that filtering rejected
+	// over all accounts.  The public page falls back to it when the 24-hour
+	// figures are not available, so that the fallback shows a real number
+	// instead of zero.
+	Blocked int64 `json:"blocked"`
+
+	// Passed is the cumulative number of queries that matched a filtering
+	// rule but were allowed by the allow-list over all accounts.  It is the
+	// fallback of [PublicStats.Passed24h], for the same reason as
+	// [PublicStats.Blocked].
+	Passed int64 `json:"passed"`
+
 	// Rules is the number of filtering rules in force.  Lists and
 	// CustomRules say where they come from.
 	Rules       uint64 `json:"rules"`
@@ -283,6 +295,8 @@ func (m *Manager) PublicStats() (s *PublicStats) {
 	if sum := m.users.Summary(); sum != nil {
 		s.Queries = sum.TotalRequests
 		s.Accounts = sum.Total
+		s.Blocked = sum.Blocked
+		s.Passed = sum.Passed
 
 		// A disabled, expired or over-quota account cannot be used, so it is
 		// not active.  One that is merely about to expire still works.

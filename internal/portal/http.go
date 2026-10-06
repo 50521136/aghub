@@ -48,6 +48,11 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	// through a single handler or the second registration panics.
 	reg.Register(http.MethodGet, "/portal/api/avatar", m.handleAvatarAny)
 
+	// The check-in is read and written on one path.  The registrar keys its
+	// mux on the path alone, so the two verbs cannot be registered separately
+	// and are dispatched by a single handler, exactly like the avatar above.
+	reg.Register(http.MethodGet, "/portal/api/checkin", m.handleCheckinAny)
+
 	// The bundled front-end is served on the same origin as the API.  A
 	// deployment that hosts the front-end elsewhere simply ignores it.
 	m.registerStatic(reg)
@@ -634,6 +639,11 @@ func (m *Manager) requireUser(w http.ResponseWriter, r *http.Request) (u *users.
 type meResponse struct {
 	// User is the account of the signed-in user.
 	User *Info `json:"user"`
+
+	// Checkin is the daily check-in state of the account.  It is a sibling of
+	// User rather than part of it so that it mirrors the standalone
+	// GET /portal/api/checkin, which returns the same object at the top level.
+	Checkin *users.CheckinStatus `json:"checkin"`
 }
 
 // handleMe implements GET /portal/api/me.
@@ -656,7 +666,10 @@ func (m *Manager) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &meResponse{User: info})
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &meResponse{
+		User:    info,
+		Checkin: m.users.CheckinStatus(u.UID),
+	})
 }
 
 // handlePublic implements GET /portal/api/public.
@@ -804,6 +817,94 @@ func (m *Manager) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &avatarResponse{
 		OK:     true,
 		Avatar: req.Avatar,
+	})
+}
+
+// handleCheckinAny serves /portal/api/checkin for both verbs.
+//
+// The registrar keys its mux on the path alone, so reading the state and
+// recording a check-in have to share a handler; the method picks the one.
+func (m *Manager) handleCheckinAny(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		m.handleCheckin(w, r)
+
+		return
+	}
+
+	m.handleCheckinStatus(w, r)
+}
+
+// handleCheckinStatus implements GET /portal/api/checkin.
+func (m *Manager) handleCheckinStatus(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	u, ok := m.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	st := m.users.CheckinStatus(u.UID)
+	if st == nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusNotFound, "no such user")
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, st)
+}
+
+// checkinResponse is the response of POST /portal/api/checkin.
+type checkinResponse struct {
+	// OK is true whenever the check-in was recorded, including a repeat on
+	// the same day, so that a retry is not mistaken for a failure.
+	OK bool `json:"ok"`
+
+	// Streak is the number of consecutive check-in days after the call.
+	Streak int64 `json:"streak"`
+
+	// TempBonus is the temporary allowance granted by the call.  It is zero
+	// when the account had already checked in or has no finite quota.
+	TempBonus int64 `json:"temp_bonus"`
+
+	// PermanentBonus is the permanent quota increase granted by the call.  It
+	// is zero when no milestone was reached.
+	PermanentBonus int64 `json:"permanent_bonus"`
+
+	// Milestone is the streak length that granted
+	// [checkinResponse.PermanentBonus], or zero when none was reached.
+	Milestone int64 `json:"milestone"`
+}
+
+// handleCheckin implements POST /portal/api/checkin.
+func (m *Manager) handleCheckin(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	u, ok := m.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	res, err := m.users.Checkin(u.UID)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusInternalServerError, "%s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &checkinResponse{
+		OK:             true,
+		Streak:         res.Streak,
+		TempBonus:      res.TempBonus,
+		PermanentBonus: res.PermanentBonus,
+		Milestone:      res.Milestone,
 	})
 }
 

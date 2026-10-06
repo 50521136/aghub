@@ -239,7 +239,21 @@ if (is_array($rank_r) && !empty($rank_r['ok'])) {
 // 这一步不走并发批次，因为它绝不能命中缓存 —— 缓存下来的探测器会被复用，
 // 探测就失去意义了。
 $probe_label = '';
-$probe_host = site_host();
+$probe_host = '';
+
+// 探测器必须挂在 DNS 服务自己的域名下，**不能**挂在门户的域名下。
+//
+// 门户跑在用户自己的站点上，而探测靠的是「让设备去解析一个随机名字」。
+// 设备如果不是走 AGHub，这个查询就会交给运营商或公共解析器 ——
+// 名字里带着门户域名，等于把「这个人访问了哪个门户」告诉上游。
+// 服务域名本来就是对外的 DNS 接入地址，不带任何关于访问者的信息。
+//
+// 服务域名没配就不探测。宁可显示「判断不了」，也不拿门户域名去换一个状态。
+$probe_host = isset($public['domain']) ? trim((string) $public['domain']) : '';
+if ($probe_host !== '' && strpos($probe_host, '.') === false) {
+    $probe_host = '';
+}
+
 if ($logged && $probe_host !== '') {
     $probe_label = probe_label($session);
 }

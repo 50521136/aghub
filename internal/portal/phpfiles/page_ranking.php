@@ -42,17 +42,30 @@ foreach ($entries as $e) {
 
 <?php if ($shown === 0): ?>
   <section class="card">
+    <div class="card-head">
+      <h2>还没有人上榜</h2>
+      <span class="card-note">解析量 > 1000</span>
+    </div>
     <p class="hint">
       <?php if (is_array($rank_r) && empty($rank_r['ok'])): ?>
         读不到榜单。<?= h((string) $rank_r['error']) ?>
       <?php else: ?>
-        还没有人上榜。解析量超过 1000 就会出现在这里。
+        榜单按累计解析量排，超过 1000 才会出现。设备接进来用一阵子就会上去。
       <?php endif; ?>
     </p>
+    <?php if ($logged && $primary_id !== ''): ?>
+      <p class="hint">
+        你在榜上的进度看「我的」里的累计解析量。
+      </p>
+    <?php endif; ?>
   </section>
 <?php else: ?>
 
 <section class="rk-wrap">
+  <div class="rk-note">
+    <span>按累计解析量排序</span>
+    <span class="rk-rule">解析量 > 1000 上榜</span>
+  </div>
   <ol class="rk-list">
     <?php foreach ($entries as $e): ?>
       <?php
