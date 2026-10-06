@@ -699,11 +699,19 @@ function redirect(string $url): void
     exit;
 }
 
-/** asset 给静态文件加版本号，改样式之后不会被浏览器缓存挡住。 */
+/**
+ * asset 给静态文件加版本号，改样式之后不会被浏览器缓存挡住。
+ *
+ * 用内容哈希，不用 filemtime：部署包里的每个文件都带着同一个固定时间戳
+ * （打包时统一写成 1970，好让同样的源码每次打出来的字节完全一致），
+ * 于是 filemtime 在任何版本里都是 0，版本号永远不变，
+ * 浏览器就一直拿第一次缓存的 CSS —— 新 HTML 配旧样式，页面看着像坏了。
+ * 内容一变哈希就变，缓存自然失效，也不怕别人用保留时间戳的方式复制文件。
+ */
 function asset(string $file): string
 {
     $path = __DIR__ . '/' . $file;
-    $v = is_file($path) ? (string) filemtime($path) : '1';
+    $v = is_file($path) ? substr(md5_file($path), 0, 8) : '1';
 
     return $file . '?v=' . $v;
 }

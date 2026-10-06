@@ -838,3 +838,7 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
   color: var(--fg2); background: #eef2f7;
   border-radius: 6px; padding: 2px 7px;
 }
+
+/* 榜单区块的容器。它跟 .card 一样是页面里的一个块，就得跟 .card 一样留出
+   下边距 —— 漏了这条，最后一张卡会直接贴住下面的卡片。 */
+.rk-wrap { margin-bottom: 12px; }
