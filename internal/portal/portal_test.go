@@ -247,6 +247,53 @@ func (s *testUserStore) ListFeedback(limit int) (r []*users.Feedback) {
 	return s.feedback
 }
 
+func (s *testUserStore) ListFeedbackFor(uid string, limit int) (r []*users.Feedback) {
+	for k := len(s.feedback) - 1; k >= 0 && len(r) < limit; k-- {
+		f := s.feedback[k]
+		if f.IsPublic() || (uid != "" && f.UID == uid) {
+			r = append(r, f)
+		}
+	}
+
+	return r
+}
+
+func (s *testUserStore) UpdateFeedback(id string, u *users.FeedbackUpdate) (saved *users.Feedback, err error) {
+	for _, f := range s.feedback {
+		if f.ID != id {
+			continue
+		}
+
+		if u.Resolved != nil {
+			f.Resolved = *u.Resolved
+		}
+
+		if u.Private != nil {
+			f.Private = *u.Private
+		}
+
+		if u.Reply != nil {
+			f.Reply = *u.Reply
+		}
+
+		f.Read = true
+
+		return f, nil
+	}
+
+	return nil, fmt.Errorf("feedback: no message with id %q", id)
+}
+
+func (s *testUserStore) CountOpenFeedback() (n int) {
+	for _, f := range s.feedback {
+		if !f.Resolved {
+			n++
+		}
+	}
+
+	return n
+}
+
 func (s *testUserStore) DeleteFeedback(id string) (err error) {
 	kept := s.feedback[:0]
 	for _, f := range s.feedback {

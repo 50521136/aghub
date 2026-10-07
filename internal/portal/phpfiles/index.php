@@ -143,16 +143,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $content = trim(isset($_POST['content']) ? (string) $_POST['content'] : '');
             $contact = trim(isset($_POST['contact']) ? (string) $_POST['contact'] : '');
 
+            // 勾选框没勾就不会出现在 $_POST 里，所以「公开」按有没有这个键判断，
+            // 而不是按它的值：表单默认是勾上的，也就是默认公开。
+            $public = isset($_POST['public']);
+
             if ($content === '') {
                 $flash_error = '写点内容吧。';
             } else {
                 $r = aghub('POST', '/portal/api/feedback', array(
                     'content' => $content,
                     'contact' => $contact,
+                    'public'  => $public,
                 ), session_token());
 
                 if ($r['ok']) {
-                    $flash_ok = '收到了，谢谢反馈。';
+                    // 刚提交的那条要立刻出现在下面的墙里，所以别读缓存。
+                    cache_forget('wall');
+                    $flash_ok = $public
+                        ? '收到了，谢谢反馈。'
+                        : '收到了，谢谢反馈。这条没有公开，只有你自己和管理员看得到。';
                     $page = 'feedback';
                 } else {
                     $flash_error = $r['error'];
@@ -263,9 +272,10 @@ if ($term !== '') {
     $log_q .= '&term=' . rawurlencode($term);
 }
 
-// 榜单有两种口径：近 24 小时和累计。默认 24 小时 —— 榜单是用来回答「现在谁
-// 在用」的，累计榜只会越来越慢地动。认不出的取值一律回到默认。
-$rank_order = (isset($_GET['order']) && (string) $_GET['order'] === 'total') ? 'total' : '24h';
+// 榜单有两种口径：今日（北京时间 0 点起算）和累计。默认今日 —— 榜单是用来
+// 回答「现在谁在用」的，累计榜只会越来越慢地动。认不出的取值一律回到默认。
+// 旧链接带的是 order=24h，那是这个标签页从前的名字，同样落到今日。
+$rank_order = (isset($_GET['order']) && (string) $_GET['order'] === 'total') ? 'total' : 'today';
 
 // 一页要问 AGHub 的三四个接口一次发出去，不要串行等。
 // 缓存键带上日志的查询条件，换搜索词或条数就是另一次查询。
@@ -290,10 +300,15 @@ if ($logged && $page === 'me') {
     }
 }
 if ($page === 'ranking') {
-    // 缓存键要带上口径，否则切到累计榜会读到 24 小时榜的缓存。
+    // 缓存键要带上口径，否则切到累计榜会读到今日榜的缓存。
     $want['ranking:' . $rank_order] = array(
         array('GET', '/portal/api/ranking?limit=30&order=' . $rank_order), 60,
     );
+}
+if ($page === 'feedback') {
+    // 反馈墙：公开的留言，加上自己的留言（自己的那条无论公开与否都看得到）。
+    // 未登录也取，因为公开那部分访客本来就该看得到。
+    $want['wall'] = array(array('GET', '/portal/api/feedback?limit=50', null, $session), 20);
 }
 
 $got = fetch_all($want);
@@ -371,6 +386,32 @@ $entries = array();
 if (is_array($rank_r) && !empty($rank_r['ok'])) {
     $entries = isset($rank_r['data']['entries']) && is_array($rank_r['data']['entries'])
         ? $rank_r['data']['entries'] : array();
+}
+
+// 反馈墙分两段渲染：自己的一条单独放在上面（未公开的也只在这里出现），下面是
+// 别人的公开留言。分不分由页面决定，这里只把数据摊平。
+$wall_r = isset($got['wall']) ? $got['wall']['v'] : array();
+$wall_items = array();
+$wall_ok = true;
+if (is_array($wall_r) && !empty($wall_r['ok'])) {
+    $wall_items = isset($wall_r['data']['items']) && is_array($wall_r['data']['items'])
+        ? $wall_r['data']['items'] : array();
+} elseif (is_array($wall_r) && $wall_r !== array()) {
+    $wall_ok = false;
+}
+
+$my_feedback = array();
+$other_feedback = array();
+foreach ($wall_items as $f) {
+    if (!is_array($f)) {
+        continue;
+    }
+
+    if (!empty($f['mine'])) {
+        $my_feedback[] = $f;
+    } else {
+        $other_feedback[] = $f;
+    }
 }
 
 // 登录之后申请一个探测器：页面把要解析的名字发给浏览器，随后回来问结果。

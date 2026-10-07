@@ -11,17 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRankingDefaultsTo24h(t *testing.T) {
+func TestRankingDefaultsToToday(t *testing.T) {
 	store := newTestStore()
 	m, _ := newTestPortal(t, store)
 
 	rec := get(t, m.handleRanking, "/portal/api/ranking")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.Equal(t, users.RankBy24h, store.rankingOrder)
+	assert.Equal(t, users.RankByToday, store.rankingOrder)
 
 	var got rankingResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	assert.Equal(t, users.RankBy24h, got.Order)
+	assert.Equal(t, users.RankByToday, got.Order)
 }
 
 func TestRankingOrderParameter(t *testing.T) {
@@ -41,7 +41,12 @@ func TestRankingOrderParameter(t *testing.T) {
 	// of failing.
 	rec = get(t, m.handleRanking, "/portal/api/ranking?order=nonsense")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.Equal(t, users.RankBy24h, store.rankingOrder)
+	assert.Equal(t, users.RankByToday, store.rankingOrder)
+
+	// The old name of the tab still names the same board.
+	rec = get(t, m.handleRanking, "/portal/api/ranking?order=24h")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, users.RankByToday, store.rankingOrder)
 }
 
 func TestLogIsLockedUntilTheCheckinStreak(t *testing.T) {

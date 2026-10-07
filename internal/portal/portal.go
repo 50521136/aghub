@@ -112,6 +112,17 @@ type UserStore interface {
 	// It is administrator-only: the portal itself never reads it back.
 	ListFeedback(limit int) (r []*users.Feedback)
 
+	// ListFeedbackFor returns the messages the portal may show to a visitor:
+	// the public ones, plus the messages of uid whatever their flag, so that
+	// an author always finds their own.  An empty uid means a visitor who is
+	// not signed in, which gets the public messages only.
+	ListFeedbackFor(uid string, limit int) (r []*users.Feedback)
+
+	// UpdateFeedback applies a partial change to one message and returns the
+	// stored result.  It is administrator-only, and it reports an unknown
+	// identifier as an error rather than as a silent success.
+	UpdateFeedback(id string, u *users.FeedbackUpdate) (saved *users.Feedback, err error)
+
 	// DeleteFeedback removes one message by its ID.
 	DeleteFeedback(id string) (err error)
 
@@ -121,6 +132,9 @@ type UserStore interface {
 	// CountUnreadFeedback returns how many messages the administrator has
 	// not opened yet.
 	CountUnreadFeedback() (n int)
+
+	// CountOpenFeedback returns how many messages have not been closed yet.
+	CountOpenFeedback() (n int)
 
 	// RegisterProbe issues a connectivity probe for the account and returns
 	// the label the browser must resolve.

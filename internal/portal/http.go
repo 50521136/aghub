@@ -34,7 +34,10 @@ func (m *Manager) Register(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/portal/api/public", m.handlePublic)
 	reg.Register(http.MethodGet, "/portal/api/ranking", m.handleRanking)
 
-	reg.Register(http.MethodPost, "/portal/api/feedback", m.handleFeedback)
+	// The wall is read by visitors who have no account yet and written by a
+	// signed-in user.  The registrar keys its mux on the path alone, so the
+	// two verbs share one handler.
+	reg.Register(http.MethodGet, "/portal/api/feedback", m.handleFeedbackAny)
 	reg.Register(http.MethodPost, "/portal/api/email/code", m.handleEmailCode)
 	reg.Register(http.MethodPost, "/portal/api/register", m.handleRegister)
 
@@ -74,6 +77,7 @@ func (m *Manager) RegisterAdmin(reg aghhttp.Registrar) {
 	reg.Register(http.MethodGet, "/portal/api/probe/status", m.handleProbeStatus)
 	reg.Register(http.MethodGet, "/control/portal/feedback", m.handleFeedbackList)
 	reg.Register(http.MethodPost, "/control/portal/feedback/read", m.handleFeedbackRead)
+	reg.Register(http.MethodPost, "/control/portal/feedback/update", m.handleFeedbackUpdate)
 	reg.Register(http.MethodPost, "/control/portal/feedback/delete", m.handleFeedbackDelete)
 }
 
@@ -249,6 +253,11 @@ type feedbackListResponse struct {
 
 	// Unread is how many of them have not been opened.
 	Unread int `json:"unread"`
+
+	// Open is how many of them the administrator has not closed yet.  The
+	// page shows it as the work left, so it counts every message rather than
+	// the ones of the page.
+	Open int `json:"open"`
 }
 
 // handleFeedbackList is the handler for the GET /control/portal/feedback HTTP
@@ -281,7 +290,76 @@ func (m *Manager) handleFeedbackList(w http.ResponseWriter, r *http.Request) {
 	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &feedbackListResponse{
 		Items:  items,
 		Unread: m.users.CountUnreadFeedback(),
+		Open:   m.users.CountOpenFeedback(),
 	})
+}
+
+// feedbackUpdateRequest is the request of the
+// POST /control/portal/feedback/update HTTP API.
+//
+// Every field is a pointer: an absent one means "leave it as it is", so that
+// closing a message cannot wipe its reply and answering one cannot reopen it.
+type feedbackUpdateRequest struct {
+	// ID is the message to change.
+	ID string `json:"id"`
+
+	// Resolved closes the message or reopens it.
+	Resolved *bool `json:"resolved"`
+
+	// Private hides the message from the public wall or shows it again.
+	Private *bool `json:"private"`
+
+	// Reply replaces the answer to the author.  An empty reply clears it.
+	Reply *string `json:"reply"`
+}
+
+// feedbackUpdateResponse is the response of the
+// POST /control/portal/feedback/update HTTP API.
+type feedbackUpdateResponse struct {
+	// Item is the message as it is stored after the change.
+	Item *users.Feedback `json:"item"`
+}
+
+// handleFeedbackUpdate is the handler for the
+// POST /control/portal/feedback/update HTTP API.
+//
+// It is the only way the administrator answers a message, closes it or changes
+// whether the portal shows it, and every one of those marks the message read:
+// the administrator cannot act on a message without having seen it.
+func (m *Manager) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := m.logger
+
+	req := &feedbackUpdateRequest{}
+
+	err := json.NewDecoder(r.Body).Decode(req)
+	if err != nil {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "decoding request: %s", err)
+
+		return
+	}
+
+	if req.ID == "" {
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusBadRequest, "id is required")
+
+		return
+	}
+
+	item, err := m.users.UpdateFeedback(req.ID, &users.FeedbackUpdate{
+		Resolved: req.Resolved,
+		Private:  req.Private,
+		Reply:    req.Reply,
+	})
+	if err != nil {
+		// An unknown identifier is the caller's mistake, not a failure of
+		// the server: the page may have been open while the message was
+		// deleted in another tab.
+		aghhttp.ErrorAndLog(ctx, l, r, w, http.StatusNotFound, "updating: %s", err)
+
+		return
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, l, w, r, &feedbackUpdateResponse{Item: item})
 }
 
 // feedbackDeleteRequest is the request of the POST /control/portal/feedback/delete
@@ -1029,6 +1107,12 @@ func (m *Manager) handleFeedback(w http.ResponseWriter, r *http.Request) {
 
 		// Contact is an optional way to reach the sender.
 		Contact string `json:"contact"`
+
+		// Public is whether the author allows the message on the public
+		// wall.  An absent field means yes: that is what the form offers,
+		// and a caller that does not know about the flag should not end up
+		// with a private message by accident.
+		Public *bool `json:"public"`
 	}{}
 
 	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(body)
@@ -1044,6 +1128,7 @@ func (m *Manager) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		Name:    u.Name,
 		Contact: body.Contact,
 		Content: body.Content,
+		Private: body.Public != nil && !*body.Public,
 	})
 	if err != nil {
 		aghhttp.ErrorAndLog(ctx, m.logger, r, w, http.StatusBadRequest,
@@ -1056,6 +1141,125 @@ func (m *Manager) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		ID:        saved.ID,
 		CreatedAt: saved.CreatedAt,
 	})
+}
+
+// handleFeedbackAny serves /portal/api/feedback for both verbs.
+//
+// The registrar keys its mux on the path alone, so reading the wall and leaving
+// a message have to share a handler; the method picks the one.
+func (m *Manager) handleFeedbackAny(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		m.handleFeedback(w, r)
+
+		return
+	}
+
+	m.handleFeedbackWall(w, r)
+}
+
+// feedbackView is one message as the portal shows it.
+//
+// It is built from [users.Feedback] rather than being the stored struct, so
+// that what reaches a browser is decided here: the contact details of the
+// author and the account the message belongs to never leave AGHub, and the page
+// of one visitor carries nothing about another.
+type feedbackView struct {
+	// ID is the identifier of the message.
+	ID string `json:"id"`
+
+	// Name is the display name of the author.
+	Name string `json:"name"`
+
+	// Content is the message itself.
+	Content string `json:"content"`
+
+	// CreatedAt is the Unix timestamp of the message.
+	CreatedAt int64 `json:"created_at"`
+
+	// Public is whether the message is shown to everybody.
+	Public bool `json:"public"`
+
+	// Resolved is whether the administrator has closed it.
+	Resolved bool `json:"resolved"`
+
+	// ResolvedAt is the Unix timestamp of the moment it was closed, zero
+	// while it is open.
+	ResolvedAt int64 `json:"resolved_at"`
+
+	// Reply is the answer of the administrator, empty until there is one.
+	Reply string `json:"reply"`
+
+	// RepliedAt is the Unix timestamp of the last change of the reply.
+	RepliedAt int64 `json:"replied_at"`
+
+	// Mine is whether the message was written by the visitor asking for it.
+	Mine bool `json:"mine"`
+}
+
+// feedbackWallResponse is the response of GET /portal/api/feedback.
+type feedbackWallResponse struct {
+	// Items are the messages, newest first.
+	Items []feedbackView `json:"items"`
+
+	// LoggedIn is whether the caller has a session.  A visitor who has none
+	// gets the public messages only, and the page says so.
+	LoggedIn bool `json:"logged_in"`
+}
+
+// handleFeedbackWall implements GET /portal/api/feedback.
+//
+// The wall is public on purpose: a visitor who has not signed in still reads
+// what other people reported, which is what makes the page worth opening.  A
+// signed-in visitor also gets their own messages whatever their flag, so that a
+// private report and the answer to it are not lost to its author.
+func (m *Manager) handleFeedbackWall(w http.ResponseWriter, r *http.Request) {
+	if m.handleCORS(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+
+	u := m.optionalUser(r)
+
+	var uid string
+	if u != nil {
+		uid = u.UID
+	}
+
+	items := m.users.ListFeedbackFor(uid, limit)
+	views := make([]feedbackView, 0, len(items))
+
+	for _, f := range items {
+		views = append(views, feedbackViewOf(f, uid))
+	}
+
+	aghhttp.WriteJSONResponseOK(ctx, m.logger, w, r, &feedbackWallResponse{
+		Items:    views,
+		LoggedIn: u != nil,
+	})
+}
+
+// feedbackViewOf builds what the portal shows of one message.
+func feedbackViewOf(f *users.Feedback, uid string) (v feedbackView) {
+	return feedbackView{
+		ID:         f.ID,
+		Name:       f.Name,
+		Content:    f.Content,
+		CreatedAt:  f.CreatedAt,
+		Public:     f.IsPublic(),
+		Resolved:   f.Resolved,
+		ResolvedAt: f.ResolvedAt,
+		Reply:      f.Reply,
+		RepliedAt:  f.RepliedAt,
+		Mine:       uid != "" && f.UID == uid,
+	}
 }
 
 // feedbackResponse is the response of POST /portal/api/feedback.

@@ -1719,6 +1719,16 @@ export type PortalFeedback = {
     created_at: number;
     /** @summary Whether an administrator has opened it */
     read: boolean;
+    /** @summary Whether the author asked it stay off the public wall */
+    private?: boolean;
+    /** @summary Whether an administrator has resolved it */
+    resolved?: boolean;
+    /** @summary Unix timestamp of the resolution, in seconds */
+    resolved_at?: number;
+    /** @summary The administrator's answer */
+    reply?: string;
+    /** @summary Unix timestamp of the answer, in seconds */
+    replied_at?: number;
 };
 
 /**
@@ -1727,6 +1737,14 @@ export type PortalFeedback = {
 export type PortalFeedbackList = {
     items: PortalFeedback[];
     unread: number;
+    open: number;
+};
+
+/**
+ * The response of a feedback update.
+ */
+export type PortalFeedbackUpdate = {
+    item: PortalFeedback;
 };
 
 export const getPortalFeedbackUrl = () => {
@@ -1775,6 +1793,30 @@ export const portalFeedbackDelete = async (
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...options?.headers },
         body: JSON.stringify(portalFeedbackDeleteRequest),
+    });
+};
+
+export const getPortalFeedbackUpdateUrl = () => {
+    return `control/portal/feedback/update`;
+};
+
+/**
+ * @summary Update a message left by a portal user
+ */
+export const portalFeedbackUpdate = async (
+    portalFeedbackUpdateRequest: {
+        id: string;
+        resolved?: boolean;
+        private?: boolean;
+        reply?: string;
+    },
+    options?: RequestInit,
+): Promise<PortalFeedbackUpdate> => {
+    return customFetch<PortalFeedbackUpdate>(getPortalFeedbackUpdateUrl(), {
+        ...options,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
+        body: JSON.stringify(portalFeedbackUpdateRequest),
     });
 };
 

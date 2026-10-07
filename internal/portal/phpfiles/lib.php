@@ -746,7 +746,7 @@ function mail_code_message($r): string
  * rank_figure 取榜单一条记录在当前口径下的解析量。
  *
  * 两个口径的数字在接口里是两个字段，选哪个由页面决定。PHP 不自己算，
- * 免得「24 小时」和「累计」在两边各有一套定义。
+ * 免得「今日」和「累计」在两边各有一套定义。
  */
 function rank_figure(array $e, string $order): int
 {
@@ -754,7 +754,9 @@ function rank_figure(array $e, string $order): int
         return (int) ($e['total_requests'] ?? 0);
     }
 
-    return (int) ($e['requests_24h'] ?? 0);
+    // requests_24h 是旧字段名，留一个兜底：门户这套 PHP 是单独部署的，先升级
+    // AGHub、后更新站上文件的窗口期里，今日榜不该整块变成 0。
+    return (int) ($e['requests_today'] ?? $e['requests_24h'] ?? 0);
 }
 
 /**

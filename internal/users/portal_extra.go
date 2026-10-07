@@ -21,29 +21,40 @@ const FeedbackFileName = "feedback.json"
 // growing without bound.
 const maxFeedback = 500
 
+// maxReplyLen is the longest answer the administrator may leave on a message.
+// It matches the limit on the message itself.
+const maxReplyLen = 2000
+
 // RankOrder is the figure a public leaderboard is sorted by.
 type RankOrder string
 
 const (
-	// RankBy24h sorts by the requests of the last 24 hours.  It is the
-	// default: a board of recent activity answers "who is using this right
-	// now", while the lifetime board only ever moves slowly.
-	RankBy24h RankOrder = "24h"
+	// RankByToday sorts by the requests of the day in progress, counted from
+	// midnight in [rankLocation].  It is the default: a board of today's
+	// activity answers "who is using this right now", while the lifetime
+	// board only ever moves slowly.
+	RankByToday RankOrder = "today"
 
 	// RankByTotal sorts by the requests since the account was created.
 	RankByTotal RankOrder = "total"
 )
 
-// ParseRankOrder returns the order named by s, falling back to [RankBy24h] for
+// ParseRankOrder returns the order named by s, falling back to [RankByToday] for
 // anything it does not recognize.  An unknown value must not be an error: the
 // board is a public page reached by links, and a stale one should show the
 // default rather than a failure.
+//
+// "24h" is accepted as another name for today: that is what the tab was called
+// before the window was aligned to the day, and links to it are still around.
 func ParseRankOrder(s string) (o RankOrder) {
-	if RankOrder(s) == RankByTotal {
+	switch RankOrder(s) {
+	case RankByTotal:
 		return RankByTotal
+	case RankByToday, "24h":
+		return RankByToday
+	default:
+		return RankByToday
 	}
-
-	return RankBy24h
 }
 
 // figure returns the number this order sorts by.
@@ -52,7 +63,7 @@ func (o RankOrder) figure(e RankEntry) (n int64) {
 		return e.TotalRequests
 	}
 
-	return e.Requests24h
+	return e.RequestsToday
 }
 
 // RankEntry is one row of the public leaderboard.
@@ -73,9 +84,10 @@ type RankEntry struct {
 	// TotalRequests is the number of requests since the account was created.
 	TotalRequests int64 `json:"total_requests"`
 
-	// Requests24h is the number of requests of the last 24 hours.  It is the
-	// figure the default board is sorted by.
-	Requests24h int64 `json:"requests_24h"`
+	// RequestsToday is the number of requests of the day in progress, counted
+	// from midnight in [rankLocation].  It is the figure the default board is
+	// sorted by.
+	RequestsToday int64 `json:"requests_today"`
 
 	// Blocked is the number of queries that a filtering rule rejected.
 	Blocked int64 `json:"blocked"`
@@ -104,8 +116,8 @@ const minRankRequests = 1000
 // Accounts with at most [minRankRequests] lifetime requests are left out as
 // well, so that the board shows the accounts that are actually being used.
 //
-// order picks the figure the board is sorted by.  On the 24-hour board an
-// account with nothing in the window is left out rather than listed with a
+// order picks the figure the board is sorted by.  On the today board an
+// account with nothing in the day so far is left out rather than listed with a
 // zero: a list of recent activity should not be padded with accounts that have
 // none of it.
 func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
@@ -124,7 +136,7 @@ func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
 			continue
 		}
 
-		if order == RankBy24h && i.Requests24h <= 0 {
+		if order == RankByToday && i.RequestsToday <= 0 {
 			continue
 		}
 
@@ -138,7 +150,7 @@ func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
 			ID:            id,
 			Requests:      i.Requests,
 			TotalRequests: i.TotalRequests,
-			Requests24h:   i.Requests24h,
+			RequestsToday: i.RequestsToday,
 			Blocked:       i.Blocked,
 			Passed:        i.Passed,
 			Avatar:        i.Avatar,
@@ -189,6 +201,31 @@ type Feedback struct {
 
 	// Read is whether the administrator has seen it.
 	Read bool `json:"read"`
+
+	// Private is whether the author asked that the message stay off the
+	// public wall of the portal.  It is stored inverted so that a message
+	// written before the flag existed, which has no such field on disk, reads
+	// back as public -- the default the portal offers.
+	Private bool `json:"private,omitempty"`
+
+	// Resolved is whether the administrator has closed the message.
+	Resolved bool `json:"resolved,omitempty"`
+
+	// ResolvedAt is the Unix timestamp of the moment it was closed.
+	ResolvedAt int64 `json:"resolved_at,omitempty"`
+
+	// Reply is the answer of the administrator.  It is empty until one is
+	// written, and the portal shows it to the author and, when the message is
+	// public, to everybody.
+	Reply string `json:"reply,omitempty"`
+
+	// RepliedAt is the Unix timestamp of the last change of the reply.
+	RepliedAt int64 `json:"replied_at,omitempty"`
+}
+
+// IsPublic reports whether the message may be shown on the public wall.
+func (f *Feedback) IsPublic() (ok bool) {
+	return !f.Private
 }
 
 // feedbackState is the on-disk form of the feedback list.
@@ -274,6 +311,119 @@ func (m *Manager) ListFeedback(limit int) (r []*Feedback) {
 	return r
 }
 
+// ListFeedbackFor returns the messages the portal shows back to a visitor: the
+// public ones, plus the messages of uid whatever their flag, so that an author
+// always finds their own.  Items are newest first.
+//
+// The caller decides what reaches the browser: the contact details and the
+// account of a message are not part of what the portal puts on the wall.
+func (m *Manager) ListFeedbackFor(uid string, limit int) (r []*Feedback) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, err := m.loadFeedbackLocked()
+	if err != nil {
+		m.logger.Error("loading feedback", "err", err)
+
+		return []*Feedback{}
+	}
+
+	items := state.Items
+	r = make([]*Feedback, 0, min(limit, len(items)))
+
+	for k := len(items) - 1; k >= 0 && len(r) < limit; k-- {
+		f := items[k]
+		if f.IsPublic() || (uid != "" && f.UID == uid) {
+			r = append(r, f)
+		}
+	}
+
+	return r
+}
+
+// FeedbackUpdate is a partial change to one message.  A nil field is left as it
+// is, so that an action that changes one thing cannot clear another.
+type FeedbackUpdate struct {
+	// Resolved closes or reopens the message.
+	Resolved *bool
+
+	// Private hides or shows it on the public wall.
+	Private *bool
+
+	// Reply replaces the answer of the administrator.  An empty reply clears
+	// it.
+	Reply *string
+}
+
+// UpdateFeedback applies a partial change to one message and returns the stored
+// result.
+//
+// Every update marks the message read: the administrator only gets here by
+// acting on it, and an unread badge that survives a reply is noise.
+func (m *Manager) UpdateFeedback(id string, u *FeedbackUpdate) (saved *Feedback, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, err := m.loadFeedbackLocked()
+	if err != nil {
+		return nil, err
+	}
+
+	var found *Feedback
+	for _, f := range state.Items {
+		if f.ID == id {
+			found = f
+
+			break
+		}
+	}
+
+	if found == nil {
+		return nil, fmt.Errorf("feedback: no message with id %q", id)
+	}
+
+	now := m.now().Unix()
+
+	if u.Resolved != nil {
+		found.Resolved = *u.Resolved
+		if found.Resolved {
+			found.ResolvedAt = now
+		} else {
+			found.ResolvedAt = 0
+		}
+	}
+
+	if u.Private != nil {
+		found.Private = *u.Private
+	}
+
+	if u.Reply != nil {
+		found.Reply = strings.TrimSpace(*u.Reply)
+		if len(found.Reply) > maxReplyLen {
+			found.Reply = found.Reply[:maxReplyLen]
+		}
+
+		if found.Reply == "" {
+			found.RepliedAt = 0
+		} else {
+			found.RepliedAt = now
+		}
+	}
+
+	found.Read = true
+
+	err = m.saveFeedbackLocked(state)
+	if err != nil {
+		return nil, err
+	}
+
+	return found, nil
+}
+
 // DeleteFeedback removes a message by its ID.
 func (m *Manager) DeleteFeedback(id string) (err error) {
 	m.mu.Lock()
@@ -325,6 +475,26 @@ func (m *Manager) CountUnreadFeedback() (n int) {
 
 	for _, f := range state.Items {
 		if !f.Read {
+			n++
+		}
+	}
+
+	return n
+}
+
+// CountOpenFeedback returns how many messages the administrator has not closed
+// yet.
+func (m *Manager) CountOpenFeedback() (n int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, err := m.loadFeedbackLocked()
+	if err != nil {
+		return 0
+	}
+
+	for _, f := range state.Items {
+		if !f.Resolved {
 			n++
 		}
 	}

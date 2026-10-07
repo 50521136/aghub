@@ -867,3 +867,40 @@ input::placeholder, textarea::placeholder { color: #8a95a6; }
 .field-row { display: flex; gap: 8px; align-items: center; }
 .field-row input { flex: 1 1 auto; min-width: 0; }
 .field-row .btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* ------------------------------------------------------------ 反馈墙 */
+
+.fb-list { list-style: none; margin: 0; padding: 0; }
+
+/* 留言之间用一条线分开，第一条不画 —— 卡片头下面直接顶一条线会像标题的下划线。 */
+.fb-item { padding: 12px 0; border-top: 1px solid var(--line); }
+.fb-item:first-child { border-top: 0; padding-top: 0; }
+
+.fb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.fb-who { font-size: 13.5px; font-weight: 600; color: var(--fg); }
+
+/* 时间推到右边：它回答的是「什么时候」，扫一眼就够了。 */
+.fb-time { font-size: 12px; color: var(--fg3); margin-left: auto; }
+
+/* 留言是用户敲进去的，换行和空格都保留；长串的地址之类要能断行，
+   否则手机上会把卡片撑宽。 */
+.fb-text {
+  margin: 8px 0 0; font-size: 13.5px; line-height: 1.7; color: var(--fg2);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+.fb-reply {
+  margin-top: 10px; padding: 10px 12px;
+  border: 1px solid var(--line-blue); border-radius: var(--r-inner);
+  background: var(--blue-soft);
+}
+
+.fb-reply-k { font-size: 12px; font-weight: 700; color: var(--blue); }
+.fb-reply .fb-text { color: var(--fg); }
+.fb-reply .fb-time { display: block; margin: 6px 0 0; }
+
+/* 公开开关：整行可点，说明文字有点长，所以不跟输入框挤在一行。 */
+.check-row { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 12px; }
+.check-row input { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; }
+.check-row span { font-size: 13px; line-height: 1.6; color: var(--fg2); margin: 0; }

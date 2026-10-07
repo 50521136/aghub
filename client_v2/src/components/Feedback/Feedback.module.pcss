@@ -1,0 +1,237 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 0 40px;
+    max-width: 760px;
+}
+
+.title {
+    margin: 0;
+}
+
+.hint {
+    margin: 0;
+    color: var(--default-description-text);
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+
+    @media (min-width: 768px) {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.statCard {
+    display: flex;
+    min-width: 0;
+    min-height: 56px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    box-shadow: var(--default-cards-box-shadow);
+}
+
+.statValue {
+    color: var(--default-main-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.statLabel {
+    overflow: hidden;
+    color: var(--default-description-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 14px;
+    background: none;
+    color: var(--default-main-text);
+    font-family: inherit;
+    font-size: var(--fs-text-t3);
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        var(--t2) background-color,
+        var(--t2) color,
+        var(--t2) border-color;
+
+    &:focus-visible {
+        outline: 2px solid var(--default-active-input-stroke);
+        outline-offset: 1px;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--hovered-page-background);
+        }
+    }
+}
+
+.chipActive {
+    border-color: transparent;
+    background: var(--default-main-button);
+    color: var(--gray-0);
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--default-main-button);
+        }
+    }
+}
+
+.toolbarActions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    @media (min-width: 768px) {
+        margin-left: auto;
+    }
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--default-item-divider);
+    border-radius: 10px;
+}
+
+/* Unread messages get a stripe instead of a colour fill, so the text keeps
+   its normal contrast. */
+.itemUnread {
+    border-inline-start: 3px solid var(--product-primary-50);
+}
+
+.itemHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.who {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+
+.name {
+    overflow: hidden;
+    color: var(--default-main-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.uid {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--page-background-additional);
+    color: var(--default-description-text);
+}
+
+.time {
+    flex: 0 0 auto;
+    color: var(--default-description-text);
+}
+
+.pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--default-item-divider);
+    color: var(--default-description-text);
+}
+
+.pillUnread {
+    background: var(--product-primary-50);
+    color: var(--default-main-text);
+}
+
+.pillResolved {
+    background: var(--fills-switch-on-default);
+    color: var(--default-primary-button-text);
+}
+
+.pillPrivate {
+    background: var(--default-warning-button);
+    color: var(--default-primary-button-text);
+}
+
+.contact {
+    color: var(--default-description-text);
+    word-break: break-all;
+}
+
+.content {
+    margin: 0;
+    color: var(--default-main-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.reply {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.empty {
+    margin: 0;
+    color: var(--default-description-text);
+}

@@ -1,9 +1,9 @@
 <?php
 /**
- * 排行榜：两个口径，近 24 小时和累计，默认 24 小时。
+ * 排行榜：两个口径，今日和累计，默认今日。
  *
- * 24 小时榜回答「现在谁在用」，累计榜回答「谁一直在用」。默认给前者 ——
- * 累计榜的名次几天都不动，新来的人在上面看不到自己。
+ * 今日榜从北京时间 0 点起算，回答「现在谁在用」；累计榜回答「谁一直在用」。
+ * 默认给前者 —— 累计榜的名次几天都不动，新来的人在上面看不到自己。
  *
  * 卡片式：每张卡是一个人，名次、头像、名字一行，解析量做进度条，下面跟
  * 拦截量和防误杀。比纯列表多花一点竖向空间，但手机上拇指扫过去能直接
@@ -14,7 +14,7 @@ declare(strict_types=1);
 
 // 榜单在 index.php 里已经跟其它接口一起并发取回来了。
 
-$is24 = $rank_order !== 'total';
+$is_today = $rank_order !== 'total';
 
 // 找自己那一条，好高亮。
 $my_ids = $ids;
@@ -40,7 +40,7 @@ foreach ($entries as $e) {
     }
 }
 
-$scope = $is24 ? '近 24 小时' : '累计';
+$scope = $is_today ? '今日' : '累计';
 ?>
 <section class="hero">
   <h1>排行榜</h1>
@@ -48,8 +48,8 @@ $scope = $is24 ? '近 24 小时' : '累计';
 </section>
 
 <nav class="rk-tabs">
-  <a class="rk-tab<?= $is24 ? ' on' : '' ?>" href="<?= h(page_url('ranking', array('order' => '24h'))) ?>">近 24 小时</a>
-  <a class="rk-tab<?= $is24 ? '' : ' on' ?>" href="<?= h(page_url('ranking', array('order' => 'total'))) ?>">累计</a>
+  <a class="rk-tab<?= $is_today ? ' on' : '' ?>" href="<?= h(page_url('ranking', array('order' => 'today'))) ?>">今日</a>
+  <a class="rk-tab<?= $is_today ? '' : ' on' ?>" href="<?= h(page_url('ranking', array('order' => 'total'))) ?>">累计</a>
 </nav>
 
 <?php if ($shown === 0): ?>
@@ -64,8 +64,8 @@ $scope = $is24 ? '近 24 小时' : '累计';
                  直接读 $rank_r['error']，取不到数据时页面会蹦一条 PHP 警告。 */ ?>
         读不到榜单。<?= h(isset($rank_r['error']) && $rank_r['error'] !== ''
             ? (string) $rank_r['error'] : '稍后再试。') ?>
-      <?php elseif ($is24): ?>
-        最近 24 小时还没有解析量。设备接进来用一会儿，这里就会出现。
+      <?php elseif ($is_today): ?>
+        今天还没有解析量。设备接进来用一会儿，这里就会出现。
       <?php else: ?>
         榜单按累计解析量排，超过 1000 才会出现。设备接进来用一阵子就会上去。
       <?php endif; ?>
@@ -136,8 +136,8 @@ $scope = $is24 ? '近 24 小时' : '累计';
     <div>
       <h2>你还没上榜</h2>
       <p class="hint">
-        <?php if ($is24): ?>
-          最近 24 小时还没有你的解析量，设备用一会儿就会上去。
+        <?php if ($is_today): ?>
+          今天还没有你的解析量，设备用一会儿就会上去。
         <?php else: ?>
           解析量超过 1000 就会上去，用起来就行。
         <?php endif; ?>

@@ -69,3 +69,126 @@ func TestFeedbackRoundTrip(t *testing.T) {
 	assert.Equal(t, "second message", reloaded[0].Content)
 	assert.True(t, reloaded[0].Read)
 }
+
+// TestFeedbackIsPublicByDefault checks the flag that decides whether the portal
+// shows a message to everybody.  It is stored inverted so that a message
+// written before the flag existed reads back as public, which is the default
+// the form offers.
+func TestFeedbackIsPublicByDefault(t *testing.T) {
+	m, _ := newTestManager(t)
+
+	f, err := m.AddFeedback(&Feedback{UID: "uid-one", Content: "hello"})
+	require.NoError(t, err)
+	assert.True(t, f.IsPublic())
+
+	// The zero value of the stored field, which is what an older file holds,
+	// is public as well.
+	var old Feedback
+	assert.True(t, old.IsPublic())
+
+	f, err = m.AddFeedback(&Feedback{UID: "uid-one", Content: "secret", Private: true})
+	require.NoError(t, err)
+	assert.False(t, f.IsPublic())
+}
+
+// TestUpdateFeedbackIsPartial checks that changing one thing about a message
+// cannot clear another.
+func TestUpdateFeedbackIsPartial(t *testing.T) {
+	m, now := newTestManager(t)
+
+	f, err := m.AddFeedback(&Feedback{UID: "uid-one", Content: "broken on android"})
+	require.NoError(t, err)
+
+	require.NoError(t, m.MarkFeedbackRead())
+	require.NoError(t, m.MarkFeedbackRead())
+
+	// A reply arrives first.
+	*now = now.Add(time.Minute)
+	reply := "check the private DNS host name"
+	saved, err := m.UpdateFeedback(f.ID, &FeedbackUpdate{Reply: &reply})
+	require.NoError(t, err)
+	assert.Equal(t, reply, saved.Reply)
+	assert.Equal(t, now.Unix(), saved.RepliedAt)
+	assert.False(t, saved.Resolved)
+
+	// Closing it must not touch the reply.
+	*now = now.Add(time.Minute)
+	yes := true
+	saved, err = m.UpdateFeedback(f.ID, &FeedbackUpdate{Resolved: &yes})
+	require.NoError(t, err)
+	assert.True(t, saved.Resolved)
+	assert.Equal(t, now.Unix(), saved.ResolvedAt)
+	assert.Equal(t, reply, saved.Reply, "closing a message keeps its reply")
+	assert.Equal(t, 0, m.CountOpenFeedback())
+
+	// Hiding it must not reopen it either.
+	saved, err = m.UpdateFeedback(f.ID, &FeedbackUpdate{Private: &yes})
+	require.NoError(t, err)
+	assert.True(t, saved.Private)
+	assert.True(t, saved.Resolved)
+	assert.Equal(t, 0, m.CountOpenFeedback())
+
+	// Reopening clears the timestamp rather than leaving a stale one.
+	no := false
+	saved, err = m.UpdateFeedback(f.ID, &FeedbackUpdate{Resolved: &no})
+	require.NoError(t, err)
+	assert.False(t, saved.Resolved)
+	assert.Zero(t, saved.ResolvedAt)
+	assert.Equal(t, 1, m.CountOpenFeedback())
+
+	// An empty reply clears the answer and its timestamp.
+	empty := "   "
+	saved, err = m.UpdateFeedback(f.ID, &FeedbackUpdate{Reply: &empty})
+	require.NoError(t, err)
+	assert.Empty(t, saved.Reply)
+	assert.Zero(t, saved.RepliedAt)
+
+	// An unknown identifier is reported rather than silently ignored.
+	_, err = m.UpdateFeedback("no-such-message", &FeedbackUpdate{Resolved: &yes})
+	require.Error(t, err)
+
+	// Every update marks the message read: the administrator cannot answer or
+	// close what they have not seen.
+	_, err = m.AddFeedback(&Feedback{UID: "uid-two", Content: "unread"})
+	require.NoError(t, err)
+	require.Equal(t, 1, m.CountUnreadFeedback())
+
+	items := m.ListFeedback(0)
+	require.Len(t, items, 2)
+	_, err = m.UpdateFeedback(items[0].ID, &FeedbackUpdate{Resolved: &yes})
+	require.NoError(t, err)
+	assert.Equal(t, 0, m.CountUnreadFeedback())
+}
+
+// TestListFeedbackFor checks what a visitor may read back: the public messages
+// for everybody, plus the messages of the visitor asking whatever their flag.
+func TestListFeedbackFor(t *testing.T) {
+	m, _ := newTestManager(t)
+
+	public, err := m.AddFeedback(&Feedback{UID: "uid-one", Name: "alice", Content: "public"})
+	require.NoError(t, err)
+
+	private, err := m.AddFeedback(&Feedback{
+		UID:     "uid-two",
+		Name:    "bob",
+		Content: "private",
+		Private: true,
+	})
+	require.NoError(t, err)
+
+	// A visitor who is not signed in sees the public wall only.
+	anon := m.ListFeedbackFor("", 0)
+	require.Len(t, anon, 1)
+	assert.Equal(t, public.ID, anon[0].ID)
+
+	// The author of a private message always finds it.
+	mine := m.ListFeedbackFor("uid-two", 0)
+	require.Len(t, mine, 2)
+	assert.Equal(t, private.ID, mine[0].ID)
+	assert.Equal(t, public.ID, mine[1].ID)
+
+	// Somebody else does not.
+	other := m.ListFeedbackFor("uid-three", 0)
+	require.Len(t, other, 1)
+	assert.Equal(t, public.ID, other[0].ID)
+}

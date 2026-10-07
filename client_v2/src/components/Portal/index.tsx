@@ -1,4 +1,4 @@
-import { createSignal, For, onMount, Show } from 'solid-js';
+import { createSignal, onMount } from 'solid-js';
 import cn from 'clsx';
 
 import intl from 'panel/common/intl';
@@ -7,13 +7,7 @@ import { Button } from 'panel/common/ui/Button';
 import { Input } from 'panel/common/controls/Input';
 import { Switch } from 'panel/common/controls/Switch';
 import { Textarea } from 'panel/common/controls/Textarea';
-import {
-    portalFeedbackDelete,
-    portalFeedbackList,
-    portalFeedbackRead,
-    portalMailTest,
-} from 'panel/api/generated';
-import type { PortalFeedback } from 'panel/api/generated';
+import { portalMailTest } from 'panel/api/generated';
 import { addErrorToast, addSuccessToast } from 'panel/stores/toasts';
 import { downloadPortalPackage, getUsers, rotatePortalToken, saveSettings, usersState } from 'panel/stores/users';
 
@@ -47,52 +41,6 @@ export const Portal = () => {
     const [saving, setSaving] = createSignal(false);
     const [testing, setTesting] = createSignal(false);
 
-    const [feedback, setFeedback] = createSignal<PortalFeedback[]>([]);
-    const [unread, setUnread] = createSignal(0);
-    const [fbLoading, setFbLoading] = createSignal(false);
-
-    /**
-     * loadFeedback pulls the messages users left in the portal.  They are not
-     * part of the public API, so this is the only place they can be read.
-     */
-    const loadFeedback = async () => {
-        setFbLoading(true);
-
-        try {
-            const r = await portalFeedbackList();
-
-            setFeedback(r.items ?? []);
-            setUnread(r.unread ?? 0);
-        } catch (e: unknown) {
-            addErrorToast(intl.getMessage('portal_feedback_load_failed'));
-            console.error(e);
-        } finally {
-            setFbLoading(false);
-        }
-    };
-
-    /** markRead clears the unread badge without hiding the messages. */
-    const markRead = async () => {
-        try {
-            await portalFeedbackRead();
-            setUnread(0);
-            setFeedback(feedback().map((f) => ({ ...f, read: true })));
-        } catch (e: unknown) {
-            addErrorToast(intl.getMessage('portal_feedback_load_failed'));
-            console.error(e);
-        }
-    };
-
-    const removeFeedback = async (id: string) => {
-        try {
-            await portalFeedbackDelete({ id });
-            setFeedback(feedback().filter((f) => f.id !== id));
-        } catch (e: unknown) {
-            addErrorToast(intl.getMessage('portal_feedback_load_failed'));
-            console.error(e);
-        }
-    };
-
     /** fill copies the stored settings into the form. */
     const fill = () => {
         const c = usersState.settings;
@@ -117,7 +65,6 @@ export const Portal = () => {
     onMount(async () => {
         await getUsers();
         fill();
-        await loadFeedback();
     });
 
     const save = async (): Promise<boolean> => {
@@ -338,65 +285,6 @@ export const Portal = () => {
                 </Button>
             </section>
 
-            <section class={s.card}>
-                <h2 class={cnCardTitle()}>
-                    {intl.getMessage('portal_feedback_title')}
-                    <Show when={unread() > 0}>
-                        {' '}
-                        <span class={cn(theme.text.t4, s.badge)} data-testid="portal-feedback-unread">
-                            {unread()}
-                        </span>
-                    </Show>
-                </h2>
-                <p class={cnHint()}>{intl.getMessage('portal_feedback_hint')}</p>
-
-                <Show when={feedback().length > 0} fallback={<p class={cnHint()}>{intl.getMessage('portal_feedback_empty')}</p>}>
-                    <ul class={s.feedbackList} data-testid="portal-feedback-list">
-                        <For each={feedback()}>
-                            {(f) => (
-                                <li class={cn(s.feedbackItem, { [s.feedbackNew]: !f.read })}>
-                                    <div class={s.feedbackHead}>
-                                        <span class={cn(theme.text.t3, theme.text.medium, s.feedbackWho)}>
-                                            {f.name || f.uid}
-                                            <span class={cn(theme.text.t4, s.feedbackId)}>{f.uid}</span>
-                                        </span>
-                                        <span class={cn(theme.text.t4, s.feedbackTime)}>{formatTime(f.created_at)}</span>
-                                    </div>
-                                    <Show when={f.contact}>
-                                        <span class={cn(theme.text.t4, s.feedbackMail)}>{f.contact}</span>
-                                    </Show>
-                                    <p class={cn(theme.text.t3, s.feedbackText)}>{f.content}</p>
-                                    <Button
-                                        variant="secondary"
-                                        onClick={() => void removeFeedback(f.id)}
-                                    >
-                                        {intl.getMessage('portal_feedback_delete')}
-                                    </Button>
-                                </li>
-                            )}
-                        </For>
-                    </ul>
-
-                    <Button
-                        variant="secondary"
-                        disabled={unread() === 0}
-                        onClick={() => void markRead()}
-                        data-testid="portal-feedback-read"
-                    >
-                        {intl.getMessage('portal_feedback_mark_read')}
-                    </Button>
-                </Show>
-
-                <Button
-                    variant="secondary"
-                    disabled={fbLoading()}
-                    onClick={() => void loadFeedback()}
-                    data-testid="portal-feedback-reload"
-                >
-                    {intl.getMessage('portal_feedback_reload')}
-                </Button>
-            </section>
-
             <div class={s.footer}>
                 <Button
                     variant="primary"
@@ -409,15 +297,6 @@ export const Portal = () => {
             </div>
         </div>
     );
-};
-
-/** formatTime renders a Unix timestamp in seconds as a local date and time. */
-const formatTime = (seconds: number): string => {
-    if (!seconds) {
-        return '';
-    }
-
-    return new Date(seconds * 1000).toLocaleString();
 };
 
 /** cnTitle is the page title class list. */
