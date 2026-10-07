@@ -1,0 +1,83 @@
+/* 门户前端的 Tailwind 输入文件，由 scripts/portal-css.sh 编译。
+ *
+ * 这里放组件层（.card/.btn/.kv…），因为 @apply 必须由 Tailwind 编译，浏览器
+ * 不认。编译结果会被内联回 index.html，所以部署时不需要任何构建工具。
+ *
+ * 为什么不用 cdn.tailwindcss.com：实测它只处理页面初始 HTML 里出现的类，
+ * 对这个前端（内容全部由 JS 渲染）等于没样式。编译一次内联进去，既不依赖
+ * 外网 CDN，也不用担心 CDN 抽风导致面板变白板。
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* tnum 是自定义类，但组件层用 @apply 引用了它，所以必须先声明成一个真正的
+   Tailwind 类，否则编译直接报 "The `tnum` class does not exist"。 */
+@layer utilities {
+  .tnum { font-variant-numeric: tabular-nums; }
+}
+
+@layer components {
+  .card { @apply rounded-card border border-line bg-surface shadow-card; }
+
+  /* 玻璃只用在浮起来的东西上：侧边栏、顶栏、弹窗。铺在内容上会糊。 */
+  .glass {
+    @apply border border-line shadow-card;
+    background: var(--glass);
+    backdrop-filter: blur(12px) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-line2 bg-surface px-3.5 py-2
+           text-[13px] font-medium text-ink shadow-card transition-colors;
+  }
+  .btn:hover { background: color-mix(in srgb, var(--ink) 4%, var(--surface)); }
+  .btn:disabled { @apply cursor-default opacity-50; }
+  .btn-primary { @apply border-transparent text-white; background: var(--accent); }
+  .btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
+  .btn-ghost { @apply border-transparent bg-transparent shadow-none; color: var(--ink2); }
+  .btn-ghost:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); }
+  .btn-sm { @apply px-2.5 py-1 text-[12px]; }
+
+  .input { @apply w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[14px] text-ink outline-none transition; }
+  .input:focus {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line2));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .label { @apply mb-1.5 block text-[12px] font-medium text-ink2; }
+
+  .nav-item { @apply flex items-center gap-2.5 rounded-[10px] px-3 py-2 text-[13.5px] font-medium text-ink2 transition-colors; }
+  .nav-item:hover { @apply text-ink; background: color-mix(in srgb, var(--ink) 5%, transparent); }
+  .nav-item.on { @apply text-ink; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .nav-item.on svg { color: var(--accent); }
+
+  .chip { @apply inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-[12px] text-ink2; }
+  .tag { @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-medium; }
+  .stat-v { @apply text-[26px] font-semibold tracking-tight tnum; }
+  .stat-l { @apply text-[12px] font-medium text-ink3; }
+  .hr { @apply my-4 border-t border-line; }
+  .sect { @apply text-[13px] font-semibold text-ink; }
+
+  .muted { color: var(--ink2); }
+  .dim { color: var(--ink3); }
+  .link { color: var(--accent2); }
+  .link:hover { text-decoration: underline; }
+
+  .kv { @apply flex items-baseline justify-between gap-3 border-t border-line py-2 text-[13px] first:border-t-0; }
+  .kv-k { @apply shrink-0 text-ink3; }
+  .kv-v { @apply min-w-0 text-right font-medium tnum; overflow-wrap: anywhere; }
+
+  /* 榜单：两套栅格模板写在 CSS 里而不是用 arbitrary value 工具类，因为这两行
+     是 JS 渲染出来的，工具类得先被扫到才存在——写死更省事也更稳。 */
+  .rk-head { display: none; }
+  .rk-row { @apply grid items-center gap-3 border-b border-line px-4 py-2.5; grid-template-columns: 2.2rem 1fr auto; }
+  .rk-row:last-child { border-bottom: 0; }
+  .rk-col-sm { display: none; }
+  @media (min-width: 640px) {
+    .rk-head { @apply grid items-center gap-3 border-b border-line px-4 py-2.5 text-[12px] font-medium; color: var(--ink3); }
+    .rk-head, .rk-row { grid-template-columns: 3rem 1fr 5.5rem 4.5rem 6rem; }
+    .rk-col-sm { display: block; }
+  }
+}
