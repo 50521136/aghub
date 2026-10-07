@@ -45,6 +45,11 @@ $b = $has24 ? (int) $public['blocked_24h'] : (int) ($public['blocked'] ?? 0);
 $p = $has24 ? (int) $public['passed_24h'] : (int) ($public['passed'] ?? 0);
 $rate = $q > 0 ? (int) round($b * 100 / $q) : 0;
 $scope = $has24 ? '近 24 小时' : '累计';
+
+// 全站平均延迟。它跟上面几个数字同一个窗口（都是统计模块给的 24 小时），所以
+// 缺 24 小时数据时不编一个数字出来 —— 这一行整个不显示，比显示 0 毫秒诚实。
+$avg_ms = isset($public['avg_latency_ms']) ? (float) $public['avg_latency_ms'] : 0.0;
+$has_lat = $has24 && $avg_ms > 0;
 ?>
 
 <?php
@@ -158,6 +163,12 @@ $probing = $probe_label !== '' || $probe_host !== '';
       <span class="sl-k">拦截率</span>
       <span class="sl-v sl-rate"><?= (int) $rate ?>%</span>
     </div>
+    <?php if ($has_lat): ?>
+      <div class="stat-line">
+        <span class="sl-k">全站平均延迟</span>
+        <span class="sl-v"><?= h(ms_h($avg_ms)) ?></span>
+      </div>
+    <?php endif; ?>
   </div>
   <div class="stat-foot">
     <div>

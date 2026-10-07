@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($r['ok']) {
                 // 列表是刚被改过的那份，别读缓存。
-                cache_forget('devices');
+                cache_forget_scoped('devices');
                 $flash_ok = $sub === 'all' ? '其它设备已退出登录。' : '该设备已退出登录。';
             } else {
                 $flash_error = $r['error'];
@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($r['ok']) {
                     // 刚提交的那条要立刻出现在下面的墙里，所以别读缓存。
-                    cache_forget('wall');
+                    cache_forget_scoped('wall');
                     $flash_ok = $public
                         ? '收到了，谢谢反馈。'
                         : '收到了，谢谢反馈。这条没有公开，只有你自己和管理员看得到。';
@@ -247,10 +247,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// 刷新日志时跳过缓存。
+// 刷新日志时跳过缓存。缓存键现在带会话前缀（s…:log:…），所以匹配中间的
+// log: 而不是开头。
 if (isset($_GET['fresh'])) {
     foreach (array_keys(isset($_SESSION['cache']) ? $_SESSION['cache'] : array()) as $k) {
-        if (strpos((string) $k, 'log:') === 0) {
+        if (strpos((string) $k, 'log:') !== false) {
             cache_forget((string) $k);
         }
     }
@@ -279,19 +280,26 @@ $rank_order = (isset($_GET['order']) && (string) $_GET['order'] === 'total') ? '
 
 // 一页要问 AGHub 的三四个接口一次发出去，不要串行等。
 // 缓存键带上日志的查询条件，换搜索词或条数就是另一次查询。
+//
+// 第三个元素 true 表示「这份响应跟访客无关」，放共享缓存给所有人用：榜单、
+// 站点配置、头像预设这些，一个访客取过之后其他人就不用再回源了。带会话令牌
+// 的那些不能共享，fetch_all 会自动按会话隔离。
 $want = array(
-    'public' => array(array('GET', '/portal/api/public'), 20),
-    'config' => array(array('GET', '/portal/api/config'), 60),
+    'public' => array(array('GET', '/portal/api/public'), 30, true),
+    'config' => array(array('GET', '/portal/api/config'), 120, true),
 );
 if ($logged) {
-    $want['me'] = array(array('GET', '/portal/api/me', null, $session), 0);
+    // 「我的」这份数据每个页面都要，但它随时会变（签到、兑换、踢设备）。
+    // GET 时缓几秒省一次回源；POST 之后一律重新取，免得刚点完还显示旧状态。
+    $me_ttl = $_SERVER['REQUEST_METHOD'] === 'POST' ? -1 : 5;
+    $want['me'] = array(array('GET', '/portal/api/me', null, $session), $me_ttl);
 }
 if ($logged && $page === 'log') {
-    $want['log:' . md5($log_q)] = array(array('GET', $log_q, null, $session), 30);
+    $want['log:' . md5($log_q)] = array(array('GET', $log_q, null, $session), 45);
 }
 if ($logged && $page === 'me') {
-    // 预设列表由 AGHub 单一来源提供，PHP 不自己抄一份。
-    $want['avatars'] = array(array('GET', '/portal/api/avatar'), 300);
+    // 预设列表由 AGHub 单一来源提供，PHP 不自己抄一份。它基本不变，缓存可以长。
+    $want['avatars'] = array(array('GET', '/portal/api/avatar'), 600, true);
 
     if (isset($_GET['view']) && $_GET['view'] === 'devices') {
         // 设备列表只在那一页取：它是一次真实的网络往返，不该让每个「我的」页
@@ -301,14 +309,17 @@ if ($logged && $page === 'me') {
 }
 if ($page === 'ranking') {
     // 缓存键要带上口径，否则切到累计榜会读到今日榜的缓存。
+    // 60 秒跟页面上写的「每 60 秒更新」对齐；这份数据所有人看到的一样，所以
+    // 放共享缓存，一分钟里只有第一个访客真的回源。
     $want['ranking:' . $rank_order] = array(
-        array('GET', '/portal/api/ranking?limit=30&order=' . $rank_order), 60,
+        array('GET', '/portal/api/ranking?limit=30&order=' . $rank_order), 60, true,
     );
 }
 if ($page === 'feedback') {
     // 反馈墙：公开的留言，加上自己的留言（自己的那条无论公开与否都看得到）。
-    // 未登录也取，因为公开那部分访客本来就该看得到。
-    $want['wall'] = array(array('GET', '/portal/api/feedback?limit=50', null, $session), 20);
+    // 未登录也取，因为公开那部分访客本来就该看得到。它带会话令牌，所以不能
+    // 共享，只能按会话缓存。
+    $want['wall'] = array(array('GET', '/portal/api/feedback?limit=50', null, $session), 45);
 }
 
 $got = fetch_all($want);
@@ -551,6 +562,15 @@ if ($page === 'ios') {
 }
 
 // ------------------------------------------------------------------ 渲染
+
+// 会话到这里就用完了：登录态读完了，缓存也不再往会话里写（缓存走上面那套带
+// 会话前缀的存储）。现在放掉会话锁，同一个浏览器并发的第二个请求就不用排在
+// 这个请求后面等 —— 「点一下要等一会儿」里有一部分就是排这个队。
+//
+// CSRF 令牌必须先取一次：页面渲染时要用它，而关了会话之后再写进 $_SESSION
+// 的值不会保存，提交时校验就会失败。
+csrf_token();
+session_write_close();
 
 $title = (string) cfg('title', 'DNS 服务');
 

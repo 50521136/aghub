@@ -96,6 +96,10 @@ func (m *Manager) load() (err error) {
 			us.dayCount.Store(st.DayCount)
 			us.hourStart.Store(st.HourStart)
 			us.hourCount.Store(st.HourCount)
+			us.hourMicros.Store(st.HourMicros)
+			us.hourSamples.Store(st.HourSamples)
+			us.totalMicros.Store(st.TotalMicros)
+			us.totalSamples.Store(st.TotalSamples)
 			us.checkinDay.Store(st.CheckinDay)
 			us.streak.Store(st.Streak)
 			us.tempBonus.Store(st.TempBonus)
@@ -108,6 +112,10 @@ func (m *Manager) load() (err error) {
 
 			if len(st.Hours) > 0 {
 				us.hours.Store(&st.Hours)
+			}
+
+			if len(st.HoursTime) > 0 {
+				us.hoursTime.Store(&st.HoursTime)
 			}
 		}
 
@@ -170,6 +178,10 @@ func (m *Manager) save() (err error) {
 				DayCount:     us.dayCount.Load(),
 				HourStart:    us.hourStart.Load(),
 				HourCount:    us.hourCount.Load(),
+				HourMicros:   us.hourMicros.Load(),
+				HourSamples:  us.hourSamples.Load(),
+				TotalMicros:  us.totalMicros.Load(),
+				TotalSamples: us.totalSamples.Load(),
 				CheckinDay:   us.checkinDay.Load(),
 				Streak:       us.streak.Load(),
 				TempBonus:    us.tempBonus.Load(),
@@ -183,6 +195,10 @@ func (m *Manager) save() (err error) {
 
 			if h := us.hours.Load(); h != nil {
 				st.Hours = *h
+			}
+
+			if h := us.hoursTime.Load(); h != nil {
+				st.HoursTime = *h
 			}
 
 			state.Usage[uid] = st

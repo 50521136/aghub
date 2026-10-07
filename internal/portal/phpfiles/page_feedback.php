@@ -1,9 +1,10 @@
 <?php
 /**
- * 反馈：给管理员留言，也看得到别人写了什么。
+ * 反馈墙：写留言，也看得到别人写了什么。
  *
- * 两段。上面是「我的反馈」—— 自己写的每条都在这里，没勾公开的也只出现在
- * 这里，管理员回复跟着它；下面是「大家的反馈」—— 别人公开出来的那部分。
+ * 两栏用排行榜那套标签切换：「大家的」是别人公开出来的留言，「我的」是自己写
+ * 的每一条 —— 没勾公开的只出现在「我的」里。默认落在「大家的」：打开这一页
+ * 的人多半想先看看别人遇到了什么，而不是先看自己那几条。
  *
  * 公开与否由写的人自己定，管理员事后也能改；所以这里不做任何判断，只按接口
  * 给的 public 渲染。真正决定谁能看到哪条的是 AGHub，不是这一页。
@@ -11,10 +12,18 @@
 
 declare(strict_types=1);
 
+$fb_tab = (isset($_GET['tab']) && (string) $_GET['tab'] === 'mine') ? 'mine' : 'all';
+
+// 没登录就没有「我的」这一栏 —— 空标签页只会让人以为自己写过的留言丢了。
+if (!$logged) {
+    $fb_tab = 'all';
+}
+
 /**
  * fb_item 渲染一条留言。
  *
  * 名字只在别人的留言上显示：自己的那几条上面已经有身份了，重复一遍只是噪音。
+ * 状态做成小胶囊放在时间旁边，一行读完，不占竖向空间。
  */
 $fb_item = function (array $f, bool $show_name): void {
     $resolved = !empty($f['resolved']);
@@ -23,37 +32,49 @@ $fb_item = function (array $f, bool $show_name): void {
     $content = isset($f['content']) ? (string) $f['content'] : '';
     $created = isset($f['created_at']) ? (int) $f['created_at'] : 0;
     $replied = isset($f['replied_at']) ? (int) $f['replied_at'] : 0;
+    $mine = !empty($f['mine']);
     ?>
     <li class="fb-item">
       <div class="fb-head">
         <?php if ($show_name): ?>
           <span class="fb-who"><?= h((string) ($f['name'] ?? '')) ?></span>
+        <?php else: ?>
+          <span class="fb-who fb-who-me">我</span>
         <?php endif; ?>
+        <span class="fb-time"><?= h(since_h($created)) ?></span>
+      </div>
+
+      <p class="fb-text"><?= nl2br(h($content)) ?></p>
+
+      <?php /* 联系方式不在这里显示，也不在接口里：门户拿到的每条留言只有昵称、
+             内容和回复，联系方式只到管理员后台。 */ ?>
+
+      <div class="fb-meta">
         <span class="pill <?= $resolved ? 'pill-ok' : 'pill-wait' ?>">
           <?= $resolved ? '已解决' : '待处理' ?>
         </span>
         <span class="pill <?= $public ? 'pill-idle' : 'pill-soft' ?>">
           <?= $public ? '公开' : '未公开' ?>
         </span>
-        <span class="fb-time"><?= h(since_h($created)) ?></span>
       </div>
-
-      <p class="fb-text"><?= h($content) ?></p>
 
       <?php if ($reply !== ''): ?>
         <div class="fb-reply">
           <span class="fb-reply-k">管理员回复</span>
-          <p class="fb-text"><?= h($reply) ?></p>
+          <p class="fb-text"><?= nl2br(h($reply)) ?></p>
           <?php if ($replied > 0): ?>
             <span class="fb-time"><?= h(since_h($replied)) ?></span>
           <?php endif; ?>
         </div>
-      <?php else: ?>
-        <p class="hint">还没回复。回复之后会显示在这里。</p>
+      <?php elseif ($mine): ?>
+        <p class="fb-wait">还没回复。管理员看过之后会回在这里。</p>
       <?php endif; ?>
     </li>
     <?php
 };
+
+$my_count = count($my_feedback);
+$other_count = count($other_feedback);
 ?>
 <section class="hero">
   <h1>反馈</h1>
@@ -75,7 +96,7 @@ $fb_item = function (array $f, bool $show_name): void {
   <a class="btn btn-primary" href="<?= h(page_url('me')) ?>">去登录</a>
 </section>
 <?php else: ?>
-<section class="card">
+<section class="card" id="write">
   <div class="card-head">
     <h2>写点什么</h2>
     <span class="card-note">以 <?= h((string) ($user['name'] ?? '')) ?> 的身份提交</span>
@@ -85,7 +106,7 @@ $fb_item = function (array $f, bool $show_name): void {
     <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
     <label>
       <span>内容</span>
-      <textarea name="content" rows="6" maxlength="2000" required
+      <textarea name="content" rows="5" maxlength="2000" required
         placeholder="例如：安卓上私人 DNS 填了之后不生效，路由器是小米 AX3000"></textarea>
     </label>
     <label>
@@ -103,14 +124,26 @@ $fb_item = function (array $f, bool $show_name): void {
 </section>
 <?php endif; ?>
 
-<?php if ($logged): ?>
-<section class="card">
-  <div class="card-head">
-    <h2>我的反馈</h2>
-    <span class="card-note"><?= $my_feedback === array() ? '还没写过' : count($my_feedback) . ' 条' ?></span>
-  </div>
-  <?php if ($my_feedback === array()): ?>
-    <p class="hint">写一条试试，管理员回复后会出现在这里。</p>
+<nav class="rk-tabs">
+  <?php if ($logged): ?>
+    <a class="rk-tab<?= $fb_tab === 'mine' ? '' : ' on' ?>"
+       href="<?= h(page_url('feedback', array('tab' => 'all'))) ?>">大家的<?= $other_count > 0 ? ' ' . $other_count : '' ?></a>
+    <a class="rk-tab<?= $fb_tab === 'mine' ? ' on' : '' ?>"
+       href="<?= h(page_url('feedback', array('tab' => 'mine'))) ?>">我的<?= $my_count > 0 ? ' ' . $my_count : '' ?></a>
+  <?php else: ?>
+    <span class="rk-tab on">大家的<?= $other_count > 0 ? ' ' . $other_count : '' ?></span>
+  <?php endif; ?>
+</nav>
+
+<?php if ($fb_tab === 'mine'): ?>
+  <?php if ($my_count === 0): ?>
+    <section class="card">
+      <div class="fb-empty">
+        <?= icon('feedback', 'fb-empty-ic') ?>
+        <h2>你还没写过反馈</h2>
+        <p class="hint">写一条试试，管理员回复后会出现在这里。</p>
+      </div>
+    </section>
   <?php else: ?>
     <ul class="fb-list">
       <?php foreach ($my_feedback as $f): ?>
@@ -118,21 +151,21 @@ $fb_item = function (array $f, bool $show_name): void {
       <?php endforeach; ?>
     </ul>
   <?php endif; ?>
-</section>
-<?php endif; ?>
-
-<section class="card">
-  <div class="card-head">
-    <h2>大家的反馈</h2>
-    <span class="card-note">公开的留言</span>
-  </div>
-
+<?php else: ?>
   <?php if (!$wall_ok): ?>
     <?php /* 读不到就说读不到，别把整块藏掉 —— 用户看到的是页面缺了一块，只会
              当成坏了。 */ ?>
-    <p class="hint">读不到反馈列表，稍后再试。</p>
-  <?php elseif ($other_feedback === array()): ?>
-    <p class="hint">还没有别人公开的留言。你可以是第一个。</p>
+    <section class="card">
+      <p class="hint">读不到反馈列表，稍后再试。</p>
+    </section>
+  <?php elseif ($other_count === 0): ?>
+    <section class="card">
+      <div class="fb-empty">
+        <?= icon('feedback', 'fb-empty-ic') ?>
+        <h2>还没有公开的留言</h2>
+        <p class="hint">你可以是第一个。</p>
+      </div>
+    </section>
   <?php else: ?>
     <ul class="fb-list">
       <?php foreach ($other_feedback as $f): ?>
@@ -140,7 +173,7 @@ $fb_item = function (array $f, bool $show_name): void {
       <?php endforeach; ?>
     </ul>
   <?php endif; ?>
-</section>
+<?php endif; ?>
 
 <!-- 常见问题不分登录与否，谁都看得到。 -->
 <section class="card">
@@ -164,7 +197,7 @@ $fb_item = function (array $f, bool $show_name): void {
     </div>
     <div class="faq-item">
       <div class="faq-q">反馈会被别人看到吗？</div>
-      <div class="faq-a">写的时候勾了「公开」才会出现在上面，而且只显示你的昵称和留言内容，联系方式不会显示。</div>
+      <div class="faq-a">写的时候勾了「公开」才会出现在「大家的」里，而且只显示你的昵称和留言内容，联系方式不会显示。</div>
     </div>
   </div>
 </section>

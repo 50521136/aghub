@@ -187,6 +187,13 @@ func (s *Server) updateStats(dctx *dnsContext, clientIP string, processingTime t
 	if s.userQuotas != nil {
 		blocked, passed := filteringOutcome(dctx.result.Reason)
 		s.userQuotas.RecordResult(e.Client, blocked, passed)
+
+		// The duration is attributed to the account the query belongs to,
+		// matched exactly like the quota check is, so that the average the
+		// portal shows sits next to the counts of the same account.
+		if addr := pctx.Addr.Addr(); addr.IsValid() {
+			s.userQuotas.ObserveLatency(dctx.clientID, addr, processingTime)
+		}
 	}
 }
 

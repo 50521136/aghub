@@ -191,6 +191,27 @@ type usage struct {
 	// a lock; the background flusher is the only writer.
 	hours atomic.Pointer[map[int64]int64]
 
+	// hourMicros is the sum of the durations of the queries counted in the
+	// hour bucket that hourStart points to, in microseconds, and
+	// hourSamples is how many durations that sum is made of.  They are kept
+	// apart from hourCount because the two count different populations:
+	// hourCount counts the queries the account was allowed to make, while
+	// the durations cover every query the statistics module recorded for
+	// it, filtering included.
+	hourMicros  atomic.Int64
+	hourSamples atomic.Int64
+
+	// hoursTime maps the Unix timestamp of an hour bucket to the durations
+	// counted in it, for the buckets inside the window above.  It is the
+	// latency counterpart of hours and is published the same way.
+	hoursTime atomic.Pointer[map[int64]timeBucket]
+
+	// totalMicros and totalSamples are the lifetime sums behind the average
+	// latency of the account.  They are plain counters rather than buckets
+	// because the total figure is not windowed.
+	totalMicros  atomic.Int64
+	totalSamples atomic.Int64
+
 	// checkinDay is the Unix timestamp of the local midnight of the day of
 	// the last check-in.  Zero means that the account has never checked in.
 	checkinDay atomic.Int64
@@ -252,6 +273,20 @@ type usageState struct {
 	// requests made in it, for the buckets inside the window the board reads.
 	Hours map[int64]int64 `json:"hours,omitempty"`
 
+	// HourMicros and HourSamples are the duration sums of the hour bucket
+	// that is currently open.
+	HourMicros  int64 `json:"hour_micros,omitempty"`
+	HourSamples int64 `json:"hour_samples,omitempty"`
+
+	// HoursTime is the latency counterpart of Hours: it maps the Unix
+	// timestamp of an hour bucket to the durations counted in it.
+	HoursTime map[int64]timeBucket `json:"hours_time,omitempty"`
+
+	// TotalMicros and TotalSamples are the lifetime duration sums of the
+	// account, which the total board and the account page average.
+	TotalMicros  int64 `json:"total_micros,omitempty"`
+	TotalSamples int64 `json:"total_samples,omitempty"`
+
 	// CheckinDay is the Unix timestamp of the local midnight of the day of
 	// the last check-in.
 	CheckinDay int64 `json:"checkin_day,omitempty"`
@@ -273,6 +308,34 @@ type usageState struct {
 	// History maps a YYYY-MM-DD date to the number of requests made on that
 	// day.
 	History map[string]int64 `json:"history,omitempty"`
+}
+
+// timeBucket is the sum of the query durations counted in one hour bucket and
+// the number of queries it was summed over.  Both are kept because an average
+// needs the two, and a bucket with no samples must be distinguishable from one
+// whose samples all took zero time.
+type timeBucket struct {
+	// Micros is the sum of the durations, in microseconds.
+	Micros int64 `json:"micros"`
+
+	// Samples is the number of durations summed into Micros.
+	Samples int64 `json:"samples"`
+}
+
+// add folds another bucket into b.
+func (b timeBucket) add(other timeBucket) (sum timeBucket) {
+	return timeBucket{Micros: b.Micros + other.Micros, Samples: b.Samples + other.Samples}
+}
+
+// average returns the mean duration of the bucket in milliseconds, and the
+// number of samples behind it.  A bucket without samples has no average, so
+// both results are zero.
+func (b timeBucket) average() (ms float64, samples int64) {
+	if b.Samples <= 0 {
+		return 0, 0
+	}
+
+	return float64(b.Micros) / float64(b.Samples) / 1000, b.Samples
 }
 
 // netEntry is a CIDR network owned by a user.
@@ -1025,6 +1088,29 @@ func (m *Manager) RecordResult(clientID string, blocked, passed bool) {
 	m.dirty.Store(true)
 }
 
+// ObserveLatency counts the duration of one resolved query for the user that
+// owns the client.
+//
+// It is called on the DNS query path, once the response is known, so it looks
+// the user up in the immutable snapshot without taking a lock, exactly like
+// [Manager.AllowQuery].  A client that belongs to no user is dropped: the
+// manager must never grow from ordinary traffic, and the service-wide average
+// the portal shows for those queries comes from the statistics module.
+func (m *Manager) ObserveLatency(clientID string, ip netip.Addr, d time.Duration) {
+	if d < 0 {
+		return
+	}
+
+	e := m.match(clientID, ip)
+	if e == nil {
+		return
+	}
+
+	e.usage.recordLatency(d)
+
+	m.dirty.Store(true)
+}
+
 // matchByClientID returns the entry of the user owning the given client
 // identifier, if any.  It never takes a lock.
 func (m *Manager) matchByClientID(clientID string) (e *entry) {
@@ -1130,6 +1216,10 @@ func (m *Manager) flushHoursLocked(now time.Time) {
 
 		if start != 0 {
 			e.recordHour(start, e.hourCount.Swap(0))
+			e.recordHourTime(start, timeBucket{
+				Micros:  e.hourMicros.Swap(0),
+				Samples: e.hourSamples.Swap(0),
+			})
 		}
 
 		// As with the day bucket, adopting the current hour without
@@ -1202,6 +1292,83 @@ func (e *usage) requestsToday(now time.Time) (n int64) {
 	}
 
 	return n
+}
+
+// recordHourTime adds one closed hour of durations to the ring and drops the
+// buckets that are now outside the window.
+func (e *usage) recordHourTime(start int64, b timeBucket) {
+	next := map[int64]timeBucket{start: b}
+
+	if prev := e.hoursTime.Load(); prev != nil {
+		for h, v := range *prev {
+			if _, ok := next[h]; !ok {
+				next[h] = v
+			}
+		}
+	}
+
+	cutoff := start - (hoursWindow-1)*hourSeconds
+	for h := range next {
+		if h < cutoff {
+			delete(next, h)
+		}
+	}
+
+	e.hoursTime.Store(&next)
+}
+
+// recordLatency adds the duration of one query to the open hour bucket and to
+// the lifetime sums.
+//
+// It is called on the DNS query path, after the response, so it only touches
+// atomics.
+func (e *usage) recordLatency(d time.Duration) {
+	if d < 0 {
+		return
+	}
+
+	micros := d.Microseconds()
+
+	e.hourMicros.Add(micros)
+	e.hourSamples.Add(1)
+	e.totalMicros.Add(micros)
+	e.totalSamples.Add(1)
+}
+
+// latencyToday returns the mean query duration of the account since midnight
+// in [rankLocation], in milliseconds, and the number of queries behind it.
+//
+// It mirrors [usage.requestsToday] and therefore answers for the same window
+// the board counts in, so the two figures on one card describe one period.
+func (e *usage) latencyToday(now time.Time) (ms float64, samples int64) {
+	start := dayStartOf(now, rankLocation)
+	var sum timeBucket
+
+	if h := e.hoursTime.Load(); h != nil {
+		for s, b := range *h {
+			if s >= start {
+				sum = sum.add(b)
+			}
+		}
+	}
+
+	if s := e.hourStart.Load(); s == 0 || s >= start {
+		sum = sum.add(timeBucket{
+			Micros:  e.hourMicros.Load(),
+			Samples: e.hourSamples.Load(),
+		})
+	}
+
+	return sum.average()
+}
+
+// latencyTotal returns the mean query duration of the account over its whole
+// life, in milliseconds, and the number of queries behind it.
+func (e *usage) latencyTotal() (ms float64, samples int64) {
+	return timeBucket{
+		Micros:  e.totalMicros.Load(),
+		Samples: e.totalSamples.Load(),
+	}.average()
 }
 
 // dayStartOf returns the Unix timestamp of midnight of the day that contains t
@@ -1351,6 +1518,19 @@ type Info struct {
 	// from midnight in [rankLocation].
 	RequestsToday int64 `json:"requests_today"`
 
+	// AvgLatencyTodayMS is the mean duration of the queries of the day in
+	// progress, in milliseconds, and LatencyTodaySamples is how many queries
+	// that average was computed from.  The average is zero when there are no
+	// samples, which is why the count is reported next to it: a page must be
+	// able to tell "no data" from "instant".
+	AvgLatencyTodayMS   float64 `json:"avg_latency_today_ms"`
+	LatencyTodaySamples int64   `json:"latency_today_samples"`
+
+	// AvgLatencyMS and LatencySamples are the same figures over the whole
+	// life of the account.
+	AvgLatencyMS   float64 `json:"avg_latency_ms"`
+	LatencySamples int64   `json:"latency_samples"`
+
 	// Blocked is the number of queries that a filtering rule rejected.
 	Blocked int64 `json:"blocked"`
 
@@ -1418,6 +1598,9 @@ func (m *Manager) info(e *entry) (i *Info) {
 		History:           e.usage.historyOf(m.loc, m.now()),
 		HasPortalPassword: m.HasPortalPassword(u.UID),
 	}
+
+	i.AvgLatencyTodayMS, i.LatencyTodaySamples = e.usage.latencyToday(m.now())
+	i.AvgLatencyMS, i.LatencySamples = e.usage.latencyTotal()
 
 	if u.ExpiresAt > 0 {
 		i.RemainingSeconds = max(0, u.ExpiresAt-now)

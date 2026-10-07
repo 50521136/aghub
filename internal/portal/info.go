@@ -330,6 +330,11 @@ type PublicStats struct {
 	Blocked24h int64 `json:"blocked_24h"`
 	Passed24h  int64 `json:"passed_24h"`
 
+	// AvgLatencyMS is the mean time the service took to answer a query over
+	// those 24 hours, in milliseconds.  Like the counters it is zero when
+	// the statistics module is not available.
+	AvgLatencyMS float64 `json:"avg_latency_ms"`
+
 	// Blocked is the cumulative number of queries that filtering rejected
 	// over all accounts.  The public page falls back to it when the 24-hour
 	// figures are not available, so that the fallback shows a real number
@@ -382,6 +387,7 @@ func (m *Manager) PublicStats() (s *PublicStats) {
 		s.Queries24h = st.Queries
 		s.Blocked24h = st.Blocked
 		s.Passed24h = st.Passed
+		s.AvgLatencyMS = st.AvgLatencyMS
 	}
 
 	// Filtering is optional, and a page that claims zero rules would read as

@@ -182,8 +182,9 @@ func (portalStatsSource) Stats24h() (s portal.StatsSummary) {
 	st := sts.GetStats24h()
 
 	return portal.StatsSummary{
-		Queries: int64(st.Queries),
-		Blocked: int64(st.Blocked),
-		Passed:  int64(st.Allowed),
+		Queries:      int64(st.Queries),
+		Blocked:      int64(st.Blocked),
+		Passed:       int64(st.Allowed),
+		AvgLatencyMS: st.AvgLatencyMS,
 	}
 }

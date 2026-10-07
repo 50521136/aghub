@@ -96,6 +96,11 @@ $scope = $is_today ? '今日' : '累计';
         $blk = isset($e['blocked']) ? (int) $e['blocked'] : -1;
         $pas = isset($e['passed']) ? (int) $e['passed'] : -1;
 
+        // 平均延迟跟着榜单口径走：今日榜给今天的，累计榜给开户以来的。
+        // 没有样本的（新账号、还没解析过）显示破折号，不显示 0。
+        $lat = isset($e['avg_latency_ms']) ? (float) $e['avg_latency_ms'] : 0.0;
+        $lat_n = isset($e['latency_samples']) ? (int) $e['latency_samples'] : 0;
+
         $w = $peak > 0 ? (int) round($n * 100 / $peak) : 0;
         if ($w < 3 && $n > 0) {
             $w = 3;
@@ -117,6 +122,7 @@ $scope = $is_today ? '今日' : '累计';
             <span class="rk-stats">
               <span><b><?= h(num_h(max(0, $blk))) ?></b>拦截量</span>
               <span><b><?= h(num_h(max(0, $pas))) ?></b>防误杀</span>
+              <span><b><?= h(ms_h($lat, $lat_n)) ?></b>平均延迟</span>
             </span>
           <?php endif; ?>
         </span>
@@ -130,7 +136,13 @@ $scope = $is_today ? '今日' : '累计';
   <?php if ($my_rank > 0): ?>
     <div>
       <h2>你在第 <?= (int) $my_rank ?> 名</h2>
-      <p class="hint"><?= h($scope) ?> <?= h(num_h(rank_figure($my_entry, $rank_order))) ?> 次解析。</p>
+      <p class="hint">
+        <?= h($scope) ?> <?= h(num_h(rank_figure($my_entry, $rank_order))) ?> 次解析，
+        平均延迟 <?= h(ms_h(
+            isset($my_entry['avg_latency_ms']) ? (float) $my_entry['avg_latency_ms'] : 0.0,
+            isset($my_entry['latency_samples']) ? (int) $my_entry['latency_samples'] : 0,
+        )) ?>。
+      </p>
     </div>
   <?php else: ?>
     <div>
@@ -146,6 +158,12 @@ $scope = $is_today ? '今日' : '累计';
   <?php endif; ?>
   <a class="btn" href="<?= h(page_url('log')) ?>">看我的日志</a>
 </section>
+
+<?php /* 榜单和反馈是同一件事的两面：看到别人的数据，再问一句为什么。所以从
+         这里留一个入口，不用退回导航再点一次。 */ ?>
+<p class="hint rk-more">
+  用着不顺手、想加点什么？<a href="<?= h(page_url('feedback')) ?>">去反馈墙说一句</a>。
+</p>
 <?php else: ?>
 <section class="card cta">
   <div>

@@ -234,6 +234,12 @@ type StatsSummary struct {
 	// Passed is the number of queries that matched a filtering rule but
 	// were allowed by the allow-list.
 	Passed int64
+
+	// AvgLatencyMS is the mean time the service took to answer a query over
+	// those 24 hours, in milliseconds.  It covers every client, including
+	// the ones that belong to no account, which is what makes it a
+	// service-wide figure rather than a sum of the accounts.
+	AvgLatencyMS float64
 }
 
 // StatsSource reports the service-wide query counters of the last 24 hours.

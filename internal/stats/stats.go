@@ -95,6 +95,10 @@ type Stats24h struct {
 	// Allowed is the number of queries that matched a filtering rule but
 	// were allowed by the allow-list.
 	Allowed uint64
+
+	// AvgLatencyMS is the mean time the service took to answer a query, in
+	// milliseconds.  It is averaged over the same 24 hours as the counters.
+	AvgLatencyMS float64
 }
 
 // Interface is the statistics interface to be used by other packages.
@@ -330,9 +334,10 @@ func (s *StatsCtx) GetStats24h() (st Stats24h) {
 	}
 
 	return Stats24h{
-		Queries: resp.NumDNSQueries,
-		Blocked: resp.NumBlockedFiltering,
-		Allowed: resp.NumAllowedAllowList,
+		Queries:      resp.NumDNSQueries,
+		Blocked:      resp.NumBlockedFiltering,
+		Allowed:      resp.NumAllowedAllowList,
+		AvgLatencyMS: resp.AvgProcessingTime * 1000,
 	}
 }
 

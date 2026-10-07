@@ -82,6 +82,35 @@ $client = isset($user['client']) && is_array($user['client']) ? $user['client'] 
   </div>
 </section>
 
+<?php /* 平均延迟是这一版新加的：它回答的是「我这个账号解析得快不快」，跟解析量
+         是两个问题。今日和累计分开给，跟排行榜的两个口径对齐。 */ ?>
+<section class="card">
+  <div class="card-head">
+    <h2>解析速度</h2>
+    <span class="card-note">从收到查询到答完</span>
+  </div>
+  <div class="stat-grid">
+    <div>
+      <span>今日平均延迟</span>
+      <b><?= h(ms_h(
+          (float) ($user['avg_latency_today_ms'] ?? 0),
+          (int) ($user['latency_today_samples'] ?? 0),
+      )) ?></b>
+    </div>
+    <div>
+      <span>累计平均延迟</span>
+      <b><?= h(ms_h(
+          (float) ($user['avg_latency_ms'] ?? 0),
+          (int) ($user['latency_samples'] ?? 0),
+      )) ?></b>
+    </div>
+  </div>
+  <p class="hint">
+    设备解析一次名字，从我们收到到答完的平均耗时，被拦截的查询也算在里面。
+    网络来回本身就占大头，所以这个数字离你的设备越近越小。
+  </p>
+</section>
+
 <section class="card">
   <div class="card-head">
     <h2>我的专属标识</h2>

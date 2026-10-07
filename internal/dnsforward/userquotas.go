@@ -2,6 +2,7 @@ package dnsforward
 
 import (
 	"net/netip"
+	"time"
 )
 
 // UserQuotas checks the per-user query quotas.  It is implemented by the
@@ -19,6 +20,13 @@ type UserQuotas interface {
 	// allowed by the allow-list.  A client that belongs to no user is
 	// ignored by the implementation.
 	RecordResult(clientID string, blocked, passed bool)
+
+	// ObserveLatency records how long one query took for the user that owns
+	// the client.  It is called after the response is known, so that the
+	// portal can show the average resolution time of an account next to its
+	// request counts.  A client that belongs to no user is ignored by the
+	// implementation.
+	ObserveLatency(clientID string, ip netip.Addr, d time.Duration)
 }
 
 // EmptyUserQuotas is a [UserQuotas] implementation that allows every query.
@@ -34,3 +42,6 @@ func (EmptyUserQuotas) AllowQuery(_ string, _ netip.Addr, _ string) (ok bool, _ 
 
 // RecordResult implements the [UserQuotas] interface for EmptyUserQuotas.
 func (EmptyUserQuotas) RecordResult(_ string, _, _ bool) {}
+
+// ObserveLatency implements the [UserQuotas] interface for EmptyUserQuotas.
+func (EmptyUserQuotas) ObserveLatency(_ string, _ netip.Addr, _ time.Duration) {}

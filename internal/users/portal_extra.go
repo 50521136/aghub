@@ -89,6 +89,14 @@ type RankEntry struct {
 	// sorted by.
 	RequestsToday int64 `json:"requests_today"`
 
+	// AvgLatencyMS is the mean duration of the queries the account made over
+	// the window the board is showing, in milliseconds: the day in progress
+	// on the today board, the whole life of the account on the total one.
+	// LatencySamples is the number of queries it was computed from, so that
+	// a board can print "no data" instead of a zero that reads as instant.
+	AvgLatencyMS   float64 `json:"avg_latency_ms"`
+	LatencySamples int64   `json:"latency_samples"`
+
 	// Blocked is the number of queries that a filtering rule rejected.
 	Blocked int64 `json:"blocked"`
 
@@ -145,16 +153,25 @@ func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
 			id = i.IDs[0]
 		}
 
+		// The latency shown follows the window the board shows, so that one
+		// card never mixes a day of requests with a lifetime average.
+		avg, samples := i.AvgLatencyTodayMS, i.LatencyTodaySamples
+		if order == RankByTotal {
+			avg, samples = i.AvgLatencyMS, i.LatencySamples
+		}
+
 		r = append(r, RankEntry{
-			Name:          i.Name,
-			ID:            id,
-			Requests:      i.Requests,
-			TotalRequests: i.TotalRequests,
-			RequestsToday: i.RequestsToday,
-			Blocked:       i.Blocked,
-			Passed:        i.Passed,
-			Avatar:        i.Avatar,
-			LastSeen:      i.LastSeen,
+			Name:           i.Name,
+			ID:             id,
+			Requests:       i.Requests,
+			TotalRequests:  i.TotalRequests,
+			RequestsToday:  i.RequestsToday,
+			AvgLatencyMS:   avg,
+			LatencySamples: samples,
+			Blocked:        i.Blocked,
+			Passed:         i.Passed,
+			Avatar:         i.Avatar,
+			LastSeen:       i.LastSeen,
 		})
 	}
 

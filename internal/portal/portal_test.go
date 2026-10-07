@@ -1188,9 +1188,9 @@ func TestPublicStatsHasNoAccountFields(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 
 	want := []string{
-		"accounts", "active", "blocked", "blocked_24h", "custom_rules", "domain",
-		"lists", "passed", "passed_24h", "protected", "queries", "queries_24h",
-		"rules",
+		"accounts", "active", "avg_latency_ms", "blocked", "blocked_24h",
+		"custom_rules", "domain", "lists", "passed", "passed_24h", "protected",
+		"queries", "queries_24h", "rules",
 	}
 	keys := make([]string, 0, len(got))
 	for k := range got {

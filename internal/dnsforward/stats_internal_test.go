@@ -64,6 +64,12 @@ type testUserQuotas struct {
 	lastClient  string
 	lastBlocked bool
 	lastPassed  bool
+
+	// The latency observations are only counted, because the tests that use
+	// this double are about the filtering outcome; a test that cares about
+	// the durations checks the sum and the count instead.
+	latencySum   time.Duration
+	latencyCount int
 }
 
 // type check
@@ -72,6 +78,12 @@ var _ UserQuotas = (*testUserQuotas)(nil)
 // AllowQuery implements the [UserQuotas] interface for *testUserQuotas.
 func (u *testUserQuotas) AllowQuery(string, netip.Addr, string) (ok bool, reason string) {
 	return true, ""
+}
+
+// ObserveLatency implements the [UserQuotas] interface for *testUserQuotas.
+func (u *testUserQuotas) ObserveLatency(_ string, _ netip.Addr, d time.Duration) {
+	u.latencySum += d
+	u.latencyCount++
 }
 
 // RecordResult implements the [UserQuotas] interface for *testUserQuotas.

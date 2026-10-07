@@ -226,7 +226,16 @@ function cache_item(string $key, int $ttl)
 /**
  * fetch_all 把一批接口一次取回来：命中缓存的直接用，没命中的并发去拿。
  *
- * $want 形如 array(键 => array($req, $ttl))，$req 是 aghub_multi 要的形状。
+ * $want 形如 array(键 => array($req, $ttl[, $shared]))：
+ *
+ *   - $req     aghub_multi 要的形状；
+ *   - $ttl     秒，负数表示不读缓存（刚被改过的数据用这个）；
+ *   - $shared  true 表示这条响应跟访客无关，放进共享缓存给所有人用。
+ *
+ * 带会话令牌的请求（要登录才拿得到的那些）自动带上本会话的前缀，别人取不到；
+ * 不带令牌的请求本来就是公开数据，才允许用共享缓存。这两件事在这里一次做掉，
+ * 调用方不用自己记得加前缀 —— 忘了加就是串号。
+ *
  * 返回 array(键 => array('v','at','fresh'))。
  */
 function fetch_all(array $want): array
@@ -234,25 +243,53 @@ function fetch_all(array $want): array
     $out = array();
     $miss = array();
     $ttls = array();
+    $shared = array();
 
     foreach ($want as $key => $pair) {
         $ttl = (int) $pair[1];
+        $is_shared = !empty($pair[2]);
+        $req = $pair[0];
+
+        // 只有确认跟人无关的响应才进共享缓存；其余的按会话隔离。
+        $store_key = $is_shared ? $key : cache_scope() . $key;
+
         $ttls[$key] = $ttl;
+        $shared[$key] = $is_shared;
 
         // 负数的 TTL 表示不读缓存：给刚被改过的数据用（比如踢完设备后的设备
         // 列表）。0 秒不算不读 —— 同一秒内的第二次请求还是会命中。
-        $item = $ttl < 0 ? null : cache_item($key, $ttl);
+        $item = null;
+        if ($ttl >= 0) {
+            $item = $is_shared
+                ? cache_shared_get($store_key, $ttl)
+                : cache_item($store_key, $ttl);
+        }
+
         if ($item !== null) {
             $out[$key] = array('v' => $item['v'], 'at' => (int) $item['at'], 'fresh' => false);
         } else {
-            $miss[$key] = $pair[0];
+            $miss[$key] = $req;
         }
     }
 
     if ($miss !== array()) {
         $got = aghub_multi($miss);
         foreach ($got as $key => $v) {
-            cache_set($key, $v, $ttls[$key]);
+            $store_key = $shared[$key] ? $key : cache_scope() . $key;
+
+            // 失败的响应不缓存。网络抖一下、AGHub 重启一下都会返回失败，把它
+            // 们按 TTL 存下来等于让一次抖动在缓存里活几十秒；共享缓存更糟，一个
+            // 访客遇到的抖动会变成所有人的。
+            $ok = is_array($v) && !empty($v['ok']);
+
+            if ($ok) {
+                if ($shared[$key]) {
+                    cache_shared_set($store_key, $v, $ttls[$key]);
+                } else {
+                    cache_set($store_key, $v, $ttls[$key]);
+                }
+            }
+
             $out[$key] = array('v' => $v, 'at' => time(), 'fresh' => true);
         }
     }
@@ -283,6 +320,180 @@ function aghub_error_message(int $code, array $data): string
 }
 
 // --------------------------------------------------------------------- 缓存
+
+/**
+ * cache_scope 返回当前会话在共享缓存里的私有前缀。
+ *
+ * 共享缓存是所有访客共用的一块地方，所以「只属于这个人」的响应必须带上一个
+ * 别人猜不到的键。会话 id 正好合适：它随机、随会话走、退出登录就换掉。用它
+ * 而不是 uid，是因为门户的会话里本来就没有 uid，而会话 id 一定在。
+ */
+function cache_scope(): string
+{
+    $sid = session_id();
+    if ($sid === '') {
+        // 没会话的时候（比如命令行里跑）退回一个固定标识，至少不会串到别人。
+        $sid = 'nobody';
+    }
+
+    return 's' . substr(sha1($sid), 0, 16) . ':';
+}
+
+/** cache_backend 说明共享缓存落在哪儿：apcu 或 file。 */
+function cache_backend(): string
+{
+    if (function_exists('apcu_fetch') && function_exists('apcu_store')) {
+        $enabled = PHP_SAPI === 'cli' ? ini_get('apc.enable_cli') : ini_get('apc.enabled');
+        if ($enabled) {
+            return 'apcu';
+        }
+    }
+
+    return 'file';
+}
+
+/** cache_dir 共享缓存文件放哪。跟会话文件一样放临时目录，不对外可见。 */
+function cache_dir(): string
+{
+    $dir = trim((string) cfg('cache_dir', ''));
+    if ($dir === '') {
+        $dir = rtrim(sys_get_temp_dir(), '/') . '/aghub-portal-cache';
+    }
+
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0700, true);
+    }
+
+    return $dir;
+}
+
+/** cache_file_path 一条记录对应的文件。键名哈希过，免得奇怪字符进文件名。 */
+function cache_file_path(string $key): string
+{
+    return cache_dir() . '/' . sha1('aghub-portal:' . $key) . '.cache';
+}
+
+/**
+ * cache_shared_get 从共享缓存里取一条还没过期的记录，取不到返回 null。
+ *
+ * 返回 array('at' => 写入时刻, 'v' => 值)。共享缓存是所有访客共用的，所以调用
+ * 方要么确认这条数据跟人无关（榜单、站点配置），要么把 cache_scope() 拼进键里。
+ */
+function cache_shared_get(string $key, int $ttl)
+{
+    if (cache_backend() === 'apcu') {
+        $ok = false;
+        $item = apcu_fetch('aghub-portal:' . $key, $ok);
+        if (!$ok || !is_array($item) || !isset($item['at'], $item['v'])) {
+            return null;
+        }
+
+        if (time() - (int) $item['at'] > $ttl) {
+            apcu_delete('aghub-portal:' . $key);
+
+            return null;
+        }
+
+        return $item;
+    }
+
+    $path = cache_file_path($key);
+    if (!is_file($path)) {
+        return null;
+    }
+
+    $raw = @file_get_contents($path);
+    if ($raw === false || $raw === '') {
+        return null;
+    }
+
+    // allowed_classes 关掉反序列化里的对象构造：文件在本机上，但没必要给它
+    // 构造任意对象的能力。
+    $item = @unserialize($raw, array('allowed_classes' => false));
+    if (!is_array($item) || !isset($item['at'], $item['v'])) {
+        @unlink($path);
+
+        return null;
+    }
+
+    if (time() - (int) $item['at'] > $ttl) {
+        @unlink($path);
+
+        return null;
+    }
+
+    return $item;
+}
+
+/** cache_shared_set 写共享缓存。文件后端用临时文件加改名，读的人不会读到半截。 */
+function cache_shared_set(string $key, $value, int $ttl): void
+{
+    $item = array('at' => time(), 'ttl' => $ttl, 'v' => $value);
+
+    if (cache_backend() === 'apcu') {
+        // APCu 自己按 ttl 过期；再记一个 at 是为了让调用方判断新旧。
+        apcu_store('aghub-portal:' . $key, $item, max(1, $ttl));
+
+        return;
+    }
+
+    $path = cache_file_path($key);
+    $tmp = $path . '.' . bin2hex(random_bytes(4)) . '.tmp';
+
+    if (@file_put_contents($tmp, serialize($item), LOCK_EX) === false) {
+        @unlink($tmp);
+
+        return;
+    }
+
+    @chmod($tmp, 0600);
+
+    if (!@rename($tmp, $path)) {
+        @unlink($tmp);
+
+        return;
+    }
+
+    // 顺手清一次过期文件：不用定时任务，写入时偶尔扫一遍就够了。
+    if (random_int(1, 200) === 1) {
+        cache_sweep();
+    }
+}
+
+/** cache_sweep 删掉共享缓存目录里没人再会用的文件。 */
+function cache_sweep(): void
+{
+    $dir = cache_dir();
+    $names = @scandir($dir);
+    if ($names === false) {
+        return;
+    }
+
+    $cutoff = time() - 3600;
+    foreach ($names as $name) {
+        if (substr($name, -6) !== '.cache' && substr($name, -4) !== '.tmp') {
+            continue;
+        }
+
+        $path = $dir . '/' . $name;
+        $mtime = @filemtime($path);
+        if ($mtime !== false && $mtime < $cutoff) {
+            @unlink($path);
+        }
+    }
+}
+
+/** cache_shared_forget 删共享缓存里的一条记录。 */
+function cache_shared_forget(string $key): void
+{
+    if (cache_backend() === 'apcu') {
+        apcu_delete('aghub-portal:' . $key);
+
+        return;
+    }
+
+    @unlink(cache_file_path($key));
+}
 
 /**
  * cache_get 取缓存值，过期或不存在时返回 $default。
@@ -320,6 +531,17 @@ function cache_set(string $key, $value, int $ttl): void
 function cache_forget(string $key): void
 {
     unset($_SESSION['cache'][$key]);
+}
+
+/**
+ * cache_forget_scoped 删本会话的一条缓存。
+ *
+ * 键要跟 fetch_all 存进去的那个一模一样（带本会话的前缀），否则删的是空气，
+ * 用户点完还会看到旧的。
+ */
+function cache_forget_scoped(string $key): void
+{
+    cache_forget(cache_scope() . $key);
 }
 
 /**
@@ -740,6 +962,21 @@ function mail_code_message($r): string
     }
 
     return '发不出去，请稍后再试。';
+}
+
+/** ms_h 把平均延迟写成一行能读的样子。没有样本时给一个破折号，别写 0 ——
+ *  0 毫秒读起来是「快得没耗时」，而这里的意思是「还没数据」。 */
+function ms_h(float $ms, int $samples = 1): string
+{
+    if ($samples <= 0 || $ms <= 0) {
+        return '—';
+    }
+
+    if ($ms < 10) {
+        return number_format($ms, 1) . ' ms';
+    }
+
+    return number_format($ms) . ' ms';
 }
 
 /**
