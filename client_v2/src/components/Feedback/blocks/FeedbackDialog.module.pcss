@@ -1,0 +1,127 @@
+.dialog {
+    /* Wide enough for the three 200px footer buttons of the shared dialog
+       footer to share one line inside the same inset as the fields. */
+    width: min(720px, calc(100vw - 16px));
+}
+
+/* The shared footer sets no justify-content, so the buttons sit at the start
+   edge.  Right-aligning them lines the last button up with the right edge of
+   the fields above. */
+.footer {
+    justify-content: flex-end;
+}
+
+/* The shared dialog body carries no horizontal padding of its own, while the
+   header and the footer each add 16px.  Padding the form keeps the fields on
+   the same left/right edge as the title and the buttons at every width. */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 16px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.fieldLabel {
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+}
+
+.fieldValue {
+    min-width: 0;
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t3);
+    line-height: var(--lh-t3-normal);
+}
+
+.breakAll {
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+/* The message keeps its own line breaks and wraps instead of scrolling. */
+.message {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.userBox {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.userName {
+    color: var(--default-main-text);
+    font-size: var(--fs-text-t3);
+    font-weight: var(--weight-medium);
+}
+
+.userUid {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--page-background-additional);
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    word-break: break-all;
+}
+
+.badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--page-background-additional);
+    color: var(--default-description-text);
+    font-size: var(--fs-text-t4);
+    line-height: var(--lh-t4-normal);
+    white-space: nowrap;
+}
+
+.badgeUnread {
+    background: var(--default-warning-button);
+    color: var(--default-primary-button-text);
+}
+
+.badgeResolved {
+    background: var(--fills-switch-on-default);
+    color: var(--default-primary-button-text);
+}
+
+/* Private is outlined rather than filled so it does not read as another unread
+   badge next to the orange one. */
+.badgePrivate {
+    border: 1px solid var(--default-warning-button);
+    background: none;
+    color: var(--default-warning-button);
+}
+
+.replyField {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.replyActions {
+    display: flex;
+    justify-content: flex-end;
+}
