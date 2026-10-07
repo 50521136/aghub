@@ -3,9 +3,9 @@
  * 视觉：暖白底 + 橙色主色 + 12px 圆角 + 发丝线 + 一层很浅的暖阴影，亮/暗双主题。
  * 颜色一律走变量：换主题、换配色只动 :root 和 html[data-theme="dark"]。
  *
- * 变量名有新旧两套。--bg/--surface/--ink 是新名字；--bg1/--card/--fg/--blue 这些
- * 是旧名字，页面局部文件（page_*.php）里到处在用，所以这里只做别名指向新名字。
- * 想换配色就改上面那一组，别名跟着走，不用去翻那十几个页面。
+ * 这份文件是被 index.php 内联进 HTML 的（见 lib.php 的 portal_css()），不单独发
+ * 请求 —— 站点的 CDN 会忽略查询串按路径缓存，用 <link> 时新 HTML 会配上旧样式，
+ * 页面直接崩。改这里不需要别的步骤，刷新页面就生效。
  */
 
 :root {
@@ -40,27 +40,8 @@
 
   --r-card: 12px;
   --r-inner: 10px;
-  --sidebar-w: 236px;
   --top-h: 56px;
-
-  /* ---- 旧变量名，保留成别名 ---- */
-  --bg1: var(--bg);
-  --bg2: var(--bg);
-  --card: var(--surface);
-  --line-blue: var(--line2);
-  --line-orange: var(--accent-line);
-  --fg: var(--ink);
-  --fg2: var(--ink2);
-  --fg3: var(--ink3);
-  --blue: var(--accent);
-  --blue-soft: var(--accent-tint);
-  --blue-mid: var(--accent);
-  --blue-pill: var(--accent-tint);
-  --blue-pill-line: var(--accent-line);
-  --red: var(--bad);
-  --green: var(--good);
-  --orange: var(--warn);
-  --orange-bg: var(--warn-tint);
+  --tab-h: 58px;
 }
 
 html[data-theme="dark"] {
@@ -115,17 +96,17 @@ body {
 }
 
 /* ------------------------------------------------------------------ 骨架 */
-/* 手机：侧边栏是抽屉，默认在屏幕外；桌面（>=1024px）：常驻在左边。
-   内容列始终居中，桌面端也不会拉成一条长线。 */
+/* 手机优先：内容列居中，桌面端也不会拉成一条长线。底部标签栏是固定的，所以
+   内容要给它留出高度，否则最后一张卡片会被压在栏下面。 */
 
-.shell { min-height: 100vh; min-height: 100dvh; }
-
-.content {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+.shell {
+  max-width: 620px;
+  margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(var(--tab-h) + 16px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ------------------------------------------------------------------ 顶栏 */
@@ -145,17 +126,19 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.topbar-title {
-  font-size: 15px; font-weight: 600; color: var(--ink);
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
 .topbar-right {
   margin-left: auto; display: flex; align-items: center; gap: 8px;
   min-width: 0;
 }
 
-/* 顶栏上的方形图标按钮（汉堡、主题）。 */
+/* 主题按钮：三个图标都渲染出来了，按当前档位只显示一个。
+   data-theme-pick 由 <head> 里的内联脚本写在 <html> 上，第一帧之前就定了。 */
+.ic-theme-system, .ic-theme-light, .ic-theme-dark { display: none; }
+html[data-theme-pick="system"] .ic-theme-system,
+html[data-theme-pick="light"] .ic-theme-light,
+html[data-theme-pick="dark"] .ic-theme-dark { display: block; }
+
+/* 顶栏上的方形图标按钮（主题）。 */
 .icon-btn {
   flex: 0 0 auto;
   width: 34px; height: 34px;
@@ -210,100 +193,58 @@ body {
   font-size: 14px; font-weight: 600; line-height: 1;
 }
 
-/* ---------------------------------------------------------------- 侧边栏 */
+/* -------------------------------------------------------------- 底部导航 */
+/* 四个标签页固定在底部。手机上一只手够得到，桌面上也就是一条居中的窄栏 ——
+   门户一共四个页面，做成侧边栏反而要点两下（先展开再选）。 */
 
-.sidebar {
+.tabbar {
   position: fixed;
-  top: 0; bottom: 0; left: 0;
-  z-index: 50;
-  width: var(--sidebar-w);
-  display: flex; flex-direction: column;
-  gap: 6px;
-  padding: 18px 12px 14px;
-  background: var(--surface);
-  border-right: 1px solid var(--line);
-  transform: translateX(-100%);
-  transition: transform .22s cubic-bezier(.32, .72, 0, 1);
-  overflow-y: auto;
-}
-
-.sidebar.open { transform: translateX(0); }
-
-.sb-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 10px 14px;
-  min-width: 0;
-}
-
-.sb-nav { display: flex; flex-direction: column; gap: 2px; }
-
-.nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 10px;
-  border-radius: 9px;
-  font-size: 13.5px; font-weight: 500;
-  color: var(--ink2); text-decoration: none;
-  transition: color .14s, background .14s;
-}
-
-.nav-item .ic { width: 18px; height: 18px; flex: 0 0 auto; color: var(--ink3); }
-.nav-item:hover { color: var(--ink); background: var(--track); }
-.nav-item.on { color: var(--ink); background: var(--accent-tint); font-weight: 600; }
-.nav-item.on .ic { color: var(--accent); }
-
-.sb-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
-
-/* 主题三档：跟随系统 / 亮 / 暗。当前那档实心，一眼看出选的是哪个。 */
-.theme-switch {
-  display: flex; gap: 4px;
-  padding: 3px;
-  background: var(--track);
-  border-radius: 10px;
-}
-
-.theme-switch button {
-  flex: 1 1 0; min-width: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 28px; padding: 0;
-  border: 0; border-radius: 8px;
-  background: transparent; color: var(--ink3);
-  cursor: pointer;
-}
-
-.theme-switch button .ic { width: 16px; height: 16px; }
-.theme-switch button.on {
-  background: var(--surface); color: var(--ink);
-  box-shadow: 0 1px 2px rgba(60, 40, 20, .08);
-}
-
-.sb-user {
-  display: flex; align-items: center; gap: 9px;
-  padding: 9px 10px;
+  left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  display: flex;
+  max-width: 620px;
+  margin: 0 auto;
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   border-top: 1px solid var(--line);
-  color: var(--ink2); text-decoration: none;
-  font-size: 13px; min-width: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.sb-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* 抽屉的遮罩。点它关抽屉，跟点导航一样。 */
-.scrim {
-  position: fixed; inset: 0; z-index: 45;
-  background: rgba(0, 0, 0, .32);
-  opacity: 0; pointer-events: none;
-  transition: opacity .18s ease;
+.tab {
+  flex: 1 1 0; min-width: 0;
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  height: var(--tab-h);
+  color: var(--ink3);
+  text-decoration: none;
+  font-size: 11.5px;
+  transition: color .14s;
 }
 
-.scrim.open { opacity: 1; pointer-events: auto; }
+.tab .ic { width: 22px; height: 22px; }
+
+.tab-label { line-height: 1; }
+
+/* 选中态：主色 + 顶部一小段指示条。 */
+.tab.on { color: var(--accent); font-weight: 600; }
+
+.tab-bar {
+  position: absolute; top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 26px; height: 3px; border-radius: 0 0 3px 3px;
+  background: transparent;
+}
+
+.tab.on .tab-bar { background: var(--accent); }
 
 /* ------------------------------------------------------------------ 主体 */
 
 .main {
   flex: 1 1 auto;
   width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 18px 16px 40px;
+  padding: 18px 16px 32px;
 }
 
 .hero { padding: 6px 0 18px; }
@@ -955,17 +896,25 @@ input::placeholder, textarea::placeholder { color: var(--ink3); }
 /* ------------------------------------------------------------ 反馈墙 */
 
 /* 每条留言是一张自己的卡片：墙上可能同时有十几个人的话，卡片比一条分隔线
-   更容易一眼分清谁说到哪儿了。 */
+   更容易一眼分清谁说到哪儿了。圆角和阴影跟 .card 一致，整页才是一个体系。 */
 .fb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 
 .fb-item {
-  padding: 13px 14px;
+  padding: 14px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--r-inner);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
 }
 
 .fb-head { display: flex; align-items: center; gap: 8px; }
+
+/* 头像圆用名字首字，底色由标识推导 —— 同一个人每次刷新都是同一个颜色。 */
+.fb-ava {
+  flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; line-height: 1;
+}
 
 .fb-who { font-size: 13.5px; font-weight: 600; color: var(--ink); }
 
@@ -989,9 +938,12 @@ input::placeholder, textarea::placeholder { color: var(--ink3); }
 /* 状态胶囊放在内容下面：先读人说了什么，再看这条办到哪一步了。 */
 .fb-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 
+/* 回复块：左边一条主色竖线，跟留言本身区分开，一眼看出这是「别人说的」。 */
 .fb-reply {
   margin-top: 10px; padding: 10px 12px;
-  border: 1px solid var(--line); border-radius: var(--r-inner);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-inner);
   background: var(--bg);
 }
 
@@ -1010,22 +962,11 @@ input::placeholder, textarea::placeholder { color: var(--ink3); }
 
 /* ------------------------------------------------------------ 大屏微调 */
 
-@media (min-width: 1024px) {
-  .sidebar { transform: none; }
-  .content { margin-left: var(--sidebar-w); }
-  .topbar { padding: 0 28px; }
-  .topbar .menu-btn { display: none; }
-  .scrim { display: none; }
-  .main { max-width: 1000px; padding: 26px 28px 56px; }
+@media (min-width: 560px) {
   .hero h1 { font-size: 27px; }
   .stat-big { font-size: 42px; }
 }
 
-/* 中屏：抽屉照旧，但内容宽一点。 */
-@media (min-width: 640px) and (max-width: 1023px) {
-  .main { max-width: 720px; padding: 22px 22px 48px; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .scrim { transition: none; }
+  .tab { transition: none; }
 }

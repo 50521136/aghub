@@ -1185,6 +1185,34 @@ function asset(string $file): string
 }
 
 /**
+ * portal_css 返回要内联进页面的样式表内容。
+ *
+ * 为什么不用 <link>：站点的 CDN / 反代常常忽略查询串按路径缓存，`style.css?v=`
+ * 挡不住它。新 HTML 配旧样式时，新骨架里的类在老样式里没有规则，图标 SVG 没有
+ * 尺寸就会撑满整宽 —— 页面直接崩。哈希写进文件名也治不了：旧文件还在，只是换了
+ * 个名字，照样能被按路径命中。
+ *
+ * 内联之后 HTML 是唯一产物：HTML 新，样式就一定新。传输量其实没变（CSS 压缩后
+ * 本来就小），还少一次请求。
+ *
+ * 读不到文件时不返回空字符串 —— 空样式表会让页面崩得莫名其妙，不如留一条注释
+ * 让人一眼看出是文件没传上来。
+ */
+function portal_css(): string
+{
+    $path = __DIR__ . '/style.css';
+    if (!is_file($path)) {
+        return '/* style.css 没找到：部署包里少了这个文件，页面会没有样式。 */';
+    }
+
+    $css = (string) file_get_contents($path);
+
+    // </style> 出现在 CSS 里会提前闭合样式块。正常情况下不会，但真出现了也要让
+    // 页面继续可用，而不是从那里开始把后面的 CSS 当 HTML 渲染出来。
+    return str_replace('</style', '<\/style', $css);
+}
+
+/**
  * nav_items 返回底部导航的标签，顺序就是显示顺序，第一个是首页。
  */
 function nav_items(): array

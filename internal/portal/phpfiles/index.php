@@ -163,6 +163,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ? '收到了，谢谢反馈。'
                         : '收到了，谢谢反馈。这条没有公开，只有你自己和管理员看得到。';
                     $page = 'feedback';
+                    // 刚写完就落在「查看反馈」：那条现在就在墙的最上面，让人看到
+                    // 自己写的东西进去了，比停在表单上有交代。
+                    $fb_tab_hint = 'wall';
                 } else {
                     $flash_error = $r['error'];
                 }
@@ -591,7 +594,19 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
 <meta name="theme-color" content="#0c0b0a" media="(prefers-color-scheme: dark)">
 <title><?= h($title) ?> · <?= h($page_label) ?></title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f05a28'/%3E%3Cpath d='M16 7l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9v-6z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="<?= h(asset('style.css')) ?>">
+<style>
+/* 样式内联在这里，不单独发请求。
+ *
+ * 原来用 <link href="style.css?v=哈希">，但站点的 CDN / 反代**忽略查询串**按路径
+ * 缓存：新 HTML 会配上旧 style.css，而新骨架里的 .nav-item 之类的类在老样式里
+ * 没有尺寸规则，图标 SVG 就撑满整宽 —— 页面看着像炸了。哈希放进文件名也一样，
+ * 传上去的旧文件还在，只是换了个没人引用的名字。
+ *
+ * 内联之后 HTML 是唯一产物：HTML 新，样式就一定新。传输量没变（CSS 本来就压缩
+ * 着发），还少一个请求。改样式只改 style.css，这里自动跟着走。
+ */
+<?= portal_css() ?>
+</style>
 <script>
 /* 主题要在画第一帧之前定下来，否则选了暗色的人每次进页面都先闪一下白。
    三档（跟随系统 / 亮 / 暗）存在 localStorage，只有「跟随系统」要问媒体查询。 */
@@ -609,51 +624,19 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
 <body>
 <div class="shell">
 
-  <aside class="sidebar" id="sidebar">
-    <div class="sb-head">
+  <header class="topbar">
+    <div class="brand">
       <span class="brand-dot"></span>
       <span class="brand-name"><?= h($host !== '' ? $host : $title) ?></span>
     </div>
-
-    <nav class="sb-nav">
-      <?php foreach ($nav as $key => $item): ?>
-        <a class="nav-item<?= $key === $tab ? ' on' : '' ?>" href="<?= h(page_url($key)) ?>"
-           <?= $key === $tab ? 'aria-current="page"' : '' ?>>
-          <?= icon($item['icon']) ?>
-          <span><?= h($item['label']) ?></span>
-        </a>
-      <?php endforeach; ?>
-    </nav>
-
-    <div class="sb-foot">
-      <div class="theme-switch" role="group" aria-label="主题">
-        <button type="button" data-theme-set="system" title="跟随系统" aria-label="跟随系统"><?= icon('monitor') ?></button>
-        <button type="button" data-theme-set="light" title="亮色" aria-label="亮色"><?= icon('sun') ?></button>
-        <button type="button" data-theme-set="dark" title="暗色" aria-label="暗色"><?= icon('moon') ?></button>
-      </div>
-      <?php if (!$logged): ?>
-        <a class="sb-user" href="<?= h(page_url('me')) ?>">
-          <?= icon('user') ?>
-          <span>登录 / 注册</span>
-        </a>
-      <?php else: ?>
-        <a class="sb-user" href="<?= h(page_url('me')) ?>">
-          <?= avatar_html($my_avatar, (string) ($user['name'] ?? ''), $primary_id, 'topbar-ava') ?>
-          <span><?= h((string) ($user['name'] ?? '')) ?></span>
-        </a>
-      <?php endif; ?>
-    </div>
-  </aside>
-
-  <div class="scrim" id="scrim"></div>
-
-  <div class="content">
-
-  <header class="topbar">
-    <button class="icon-btn menu-btn" id="menuBtn" type="button"
-            aria-label="打开菜单" aria-controls="sidebar" aria-expanded="false"><?= icon('menu') ?></button>
-    <div class="topbar-title"><?= h($page_label) ?></div>
     <div class="topbar-right">
+      <?php /* 主题：一个按钮循环「跟随系统 → 亮 → 暗」，图标就是当前那档。
+               顶栏只有一格位置，三档做成一组按钮会把这个栏撑满。 */ ?>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="切换主题">
+        <?= icon('monitor', 'ic-theme-system') ?>
+        <?= icon('sun', 'ic-theme-light') ?>
+        <?= icon('moon', 'ic-theme-dark') ?>
+      </button>
       <?php if (!$logged): ?>
         <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录 / 注册</a>
       <?php else: ?>
@@ -711,75 +694,46 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
   ?>
   </main>
 
-  </div>
+  <nav class="tabbar">
+    <?php foreach ($nav as $key => $item): ?>
+      <a class="tab<?= $key === $tab ? ' on' : '' ?>" href="<?= h(page_url($key)) ?>"
+         <?= $key === $tab ? 'aria-current="page"' : '' ?>>
+        <span class="tab-bar"></span>
+        <?= icon($item['icon']) ?>
+        <span class="tab-label"><?= h($item['label']) ?></span>
+      </a>
+    <?php endforeach; ?>
+  </nav>
+
 </div>
 <script>
-/* 抽屉：手机上侧边栏在屏幕外，点汉堡推进来；点遮罩、点导航、按 Esc 都收起。
-   桌面端（>=1024px）侧边栏常驻，这里加不加 class 都不影响它 —— CSS 里它已经
-   不在屏幕外了，所以同一份脚本两端都对。 */
-(function () {
-  var sidebar = document.getElementById('sidebar');
-  var scrim = document.getElementById('scrim');
-  var btn = document.getElementById('menuBtn');
-  if (!sidebar || !scrim || !btn) return;
-
-  function open() {
-    sidebar.classList.add('open');
-    scrim.classList.add('open');
-    btn.setAttribute('aria-expanded', 'true');
-  }
-  function close() {
-    sidebar.classList.remove('open');
-    scrim.classList.remove('open');
-    btn.setAttribute('aria-expanded', 'false');
-  }
-
-  btn.addEventListener('click', function () {
-    if (sidebar.classList.contains('open')) { close(); } else { open(); }
-  });
-  scrim.addEventListener('click', close);
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { close(); }
-  });
-
-  // 点了导航就收起：页面正在跳走，抽屉留着会盖住新页面。
-  var items = sidebar.querySelectorAll('.nav-item, .sb-user');
-  for (var i = 0; i < items.length; i++) {
-    items[i].addEventListener('click', close);
-  }
-})();
-</script>
-<script>
-/* 主题切换。选中那档写进 localStorage，并立刻改 html[data-theme] —— 不整页刷新，
-   否则点一下要等一次重载才看到效果。 */
+/* 主题：一个按钮循环三档。选中那档写进 localStorage，并立刻改 html[data-theme] ——
+   不整页刷新，否则点一下要等一次重载才看到效果。三个图标都在按钮里，CSS 按
+   data-theme-pick 只显示当前那一档（见 style.css 的 .ic-theme-*）。 */
 (function () {
   var el = document.documentElement;
-  var btns = document.querySelectorAll('[data-theme-set]');
-  if (!btns.length) return;
+  var btn = document.getElementById('themeBtn');
+  if (!btn) return;
 
-  function mark(pick) {
-    for (var i = 0; i < btns.length; i++) {
-      var on = btns[i].getAttribute('data-theme-set') === pick;
-      if (on) { btns[i].classList.add('on'); } else { btns[i].classList.remove('on'); }
-      btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
-    }
-  }
+  var order = ['system', 'light', 'dark'];
+  var names = { system: '跟随系统', light: '亮色', dark: '暗色' };
 
   function apply(pick) {
     var dark = pick === 'dark' || (pick === 'system' && window.matchMedia
       && window.matchMedia('(prefers-color-scheme: dark)').matches);
     el.setAttribute('data-theme', dark ? 'dark' : 'light');
     el.setAttribute('data-theme-pick', pick);
-    mark(pick);
+    btn.setAttribute('title', '主题：' + names[pick] + '（点一下换下一档）');
+    btn.setAttribute('aria-label', '主题：' + names[pick]);
   }
 
-  for (var i = 0; i < btns.length; i++) {
-    btns[i].addEventListener('click', function () {
-      var pick = this.getAttribute('data-theme-set');
-      try { localStorage.setItem('aghub-portal-theme', pick); } catch (e) {}
-      apply(pick);
-    });
-  }
+  btn.addEventListener('click', function () {
+    var cur = el.getAttribute('data-theme-pick') || 'system';
+    var next = order[(order.indexOf(cur) + 1) % order.length];
+    try { localStorage.setItem('aghub-portal-theme', next); } catch (e) {}
+    apply(next);
+  });
+
   apply(el.getAttribute('data-theme-pick') || 'system');
 
   // 选了「跟随系统」的人，系统主题变了要跟着走。
