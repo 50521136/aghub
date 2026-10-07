@@ -1228,6 +1228,13 @@ function icon(string $name, string $class = ''): string
         'send' => '<path d="M20.5 3.5 3.5 10.5l6.5 2.5 2.5 6.5 8-16Z"/><path d="M10 13l4-4"/>',
         'device' => '<rect x="7" y="3" width="10" height="18" rx="2.5"/>'
             . '<path d="M10.5 17.5h3"/>',
+        'menu' => '<path d="M4 7h16M4 12h16M4 17h16"/>',
+        'sun' => '<circle cx="12" cy="12" r="4.2"/>'
+            . '<path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2'
+            . 'M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/>',
+        'moon' => '<path d="M20 14.2A8.2 8.2 0 0 1 9.8 4 8.5 8.5 0 1 0 20 14.2Z"/>',
+        'monitor' => '<rect x="3" y="4.5" width="18" height="12.5" rx="2.5"/>'
+            . '<path d="M9 20.5h6M12 17v3.5"/>',
     );
 
     $body = isset($paths[$name]) ? $paths[$name] : '';

@@ -587,27 +587,82 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#eef4fd">
+<meta name="theme-color" content="#fbf8f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0b0a" media="(prefers-color-scheme: dark)">
 <title><?= h($title) ?> · <?= h($page_label) ?></title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 7l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9v-6z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f05a28'/%3E%3Cpath d='M16 7l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9v-6z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="<?= h(asset('style.css')) ?>">
+<script>
+/* 主题要在画第一帧之前定下来，否则选了暗色的人每次进页面都先闪一下白。
+   三档（跟随系统 / 亮 / 暗）存在 localStorage，只有「跟随系统」要问媒体查询。 */
+(function () {
+  var pick = 'system';
+  try { pick = localStorage.getItem('aghub-portal-theme') || 'system'; } catch (e) {}
+  var dark = pick === 'dark' || (pick === 'system' && window.matchMedia
+    && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  var el = document.documentElement;
+  el.setAttribute('data-theme', dark ? 'dark' : 'light');
+  el.setAttribute('data-theme-pick', pick);
+})();
+</script>
 </head>
 <body>
 <div class="shell">
 
-  <header class="topbar">
-    <div class="brand">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
       <span class="brand-dot"></span>
       <span class="brand-name"><?= h($host !== '' ? $host : $title) ?></span>
     </div>
-    <?php if (!$logged): ?>
-      <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录</a>
-    <?php else: ?>
-      <a class="topbar-user" href="<?= h(page_url('me')) ?>">
-        <?= avatar_html($my_avatar, (string) ($user['name'] ?? ''), $primary_id, 'topbar-ava') ?>
-        <span><?= h((string) ($user['name'] ?? '')) ?></span>
-      </a>
-    <?php endif; ?>
+
+    <nav class="sb-nav">
+      <?php foreach ($nav as $key => $item): ?>
+        <a class="nav-item<?= $key === $tab ? ' on' : '' ?>" href="<?= h(page_url($key)) ?>"
+           <?= $key === $tab ? 'aria-current="page"' : '' ?>>
+          <?= icon($item['icon']) ?>
+          <span><?= h($item['label']) ?></span>
+        </a>
+      <?php endforeach; ?>
+    </nav>
+
+    <div class="sb-foot">
+      <div class="theme-switch" role="group" aria-label="主题">
+        <button type="button" data-theme-set="system" title="跟随系统" aria-label="跟随系统"><?= icon('monitor') ?></button>
+        <button type="button" data-theme-set="light" title="亮色" aria-label="亮色"><?= icon('sun') ?></button>
+        <button type="button" data-theme-set="dark" title="暗色" aria-label="暗色"><?= icon('moon') ?></button>
+      </div>
+      <?php if (!$logged): ?>
+        <a class="sb-user" href="<?= h(page_url('me')) ?>">
+          <?= icon('user') ?>
+          <span>登录 / 注册</span>
+        </a>
+      <?php else: ?>
+        <a class="sb-user" href="<?= h(page_url('me')) ?>">
+          <?= avatar_html($my_avatar, (string) ($user['name'] ?? ''), $primary_id, 'topbar-ava') ?>
+          <span><?= h((string) ($user['name'] ?? '')) ?></span>
+        </a>
+      <?php endif; ?>
+    </div>
+  </aside>
+
+  <div class="scrim" id="scrim"></div>
+
+  <div class="content">
+
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menuBtn" type="button"
+            aria-label="打开菜单" aria-controls="sidebar" aria-expanded="false"><?= icon('menu') ?></button>
+    <div class="topbar-title"><?= h($page_label) ?></div>
+    <div class="topbar-right">
+      <?php if (!$logged): ?>
+        <a class="topbar-login" href="<?= h(page_url('me')) ?>">登录 / 注册</a>
+      <?php else: ?>
+        <a class="topbar-user" href="<?= h(page_url('me')) ?>">
+          <?= avatar_html($my_avatar, (string) ($user['name'] ?? ''), $primary_id, 'topbar-ava') ?>
+          <span><?= h((string) ($user['name'] ?? '')) ?></span>
+        </a>
+      <?php endif; ?>
+    </div>
   </header>
 
   <main class="main">
@@ -656,17 +711,88 @@ $host = $domain !== '' ? $domain : (isset($_SERVER['HTTP_HOST']) ? (string) $_SE
   ?>
   </main>
 
-  <nav class="tabbar">
-    <?php foreach ($nav as $key => $item): ?>
-      <a class="tab<?= $key === $tab ? ' on' : '' ?>" href="<?= h(page_url($key)) ?>">
-        <span class="tab-bar"></span>
-        <?= icon($item['icon']) ?>
-        <span class="tab-label"><?= h($item['label']) ?></span>
-      </a>
-    <?php endforeach; ?>
-  </nav>
-
+  </div>
 </div>
+<script>
+/* 抽屉：手机上侧边栏在屏幕外，点汉堡推进来；点遮罩、点导航、按 Esc 都收起。
+   桌面端（>=1024px）侧边栏常驻，这里加不加 class 都不影响它 —— CSS 里它已经
+   不在屏幕外了，所以同一份脚本两端都对。 */
+(function () {
+  var sidebar = document.getElementById('sidebar');
+  var scrim = document.getElementById('scrim');
+  var btn = document.getElementById('menuBtn');
+  if (!sidebar || !scrim || !btn) return;
+
+  function open() {
+    sidebar.classList.add('open');
+    scrim.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  function close() {
+    sidebar.classList.remove('open');
+    scrim.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
+  btn.addEventListener('click', function () {
+    if (sidebar.classList.contains('open')) { close(); } else { open(); }
+  });
+  scrim.addEventListener('click', close);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { close(); }
+  });
+
+  // 点了导航就收起：页面正在跳走，抽屉留着会盖住新页面。
+  var items = sidebar.querySelectorAll('.nav-item, .sb-user');
+  for (var i = 0; i < items.length; i++) {
+    items[i].addEventListener('click', close);
+  }
+})();
+</script>
+<script>
+/* 主题切换。选中那档写进 localStorage，并立刻改 html[data-theme] —— 不整页刷新，
+   否则点一下要等一次重载才看到效果。 */
+(function () {
+  var el = document.documentElement;
+  var btns = document.querySelectorAll('[data-theme-set]');
+  if (!btns.length) return;
+
+  function mark(pick) {
+    for (var i = 0; i < btns.length; i++) {
+      var on = btns[i].getAttribute('data-theme-set') === pick;
+      if (on) { btns[i].classList.add('on'); } else { btns[i].classList.remove('on'); }
+      btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+
+  function apply(pick) {
+    var dark = pick === 'dark' || (pick === 'system' && window.matchMedia
+      && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    el.setAttribute('data-theme', dark ? 'dark' : 'light');
+    el.setAttribute('data-theme-pick', pick);
+    mark(pick);
+  }
+
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].addEventListener('click', function () {
+      var pick = this.getAttribute('data-theme-set');
+      try { localStorage.setItem('aghub-portal-theme', pick); } catch (e) {}
+      apply(pick);
+    });
+  }
+  apply(el.getAttribute('data-theme-pick') || 'system');
+
+  // 选了「跟随系统」的人，系统主题变了要跟着走。
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onSys = function () {
+      if ((el.getAttribute('data-theme-pick') || 'system') === 'system') { apply('system'); }
+    };
+    if (mq.addEventListener) { mq.addEventListener('change', onSys); }
+    else if (mq.addListener) { mq.addListener(onSys); }
+  }
+})();
+</script>
 <script>
 /* 只有「复制」用到 JS —— 页面本身是 PHP 渲染好的，没有浏览器端接口调用。 */
 function copyThis(btn) {
