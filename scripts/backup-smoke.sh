@@ -7,9 +7,13 @@ PORT=3001
 DNS_PORT=5353
 PASS='Smoke@Test123'
 
+# 默认用本地构建；传参可指定任意 tar.gz（例如从 GitHub Release 下载的正式产物）。
+TARBALL="${1:-/root/agh-src/dist-backupopt/aghub_1.0.36_linux_amd64.tar.gz}"
+
 rm -rf "$WORK"; mkdir -p "$WORK"
 cd "$WORK"
-tar -xzf /root/agh-src/dist-backupopt/aghub_1.0.36_linux_amd64.tar.gz ./aghub
+echo "=== 被测产物: $TARBALL ==="
+tar -xzf "$TARBALL" ./aghub
 chmod +x aghub
 
 echo "=== 版本 ==="
