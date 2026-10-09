@@ -71,6 +71,23 @@ const formatDate = (seconds?: number) => {
     });
 };
 
+/** formatDateTime formats a Unix timestamp in milliseconds as a local date and
+ *  time.  It is used for the offline cache, where the time of the snapshot is
+ *  the whole point: the list on screen is only as good as that moment. */
+const formatDateTime = (millis: number) => {
+    if (!millis) {
+        return intl.getMessage('users_never');
+    }
+
+    return new Date(millis).toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
 /** formatDays formats a number of seconds as a human-readable duration. */
 const formatDays = (seconds?: number) => {
     if (seconds === undefined || seconds < 0) {
@@ -596,6 +613,14 @@ export const Users = () => {
                 >
                     {intl.getMessage('users_title')}
                 </h1>
+
+                <Show when={usersState.offline}>
+                    <div class={s.offlineNote} data-testid="users-offline-note">
+                        {intl.getMessage('users_offline_cache', {
+                            time: formatDateTime(usersState.cachedAt),
+                        })}
+                    </div>
+                </Show>
 
                 <div class={s.body}>
                     <p class={s.desc}>{intl.getMessage('users_desc')}</p>

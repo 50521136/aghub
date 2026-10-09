@@ -37,6 +37,12 @@ type UsersState = {
     initialized: boolean;
     processing: boolean;
     processingSave: boolean;
+    /** offline is true when the list on screen came from the local cache
+     *  because the panel could not reach the server. */
+    offline: boolean;
+    /** cachedAt is when that cached list was taken, in Unix milliseconds.  It
+     *  is zero when the list came from the server. */
+    cachedAt: number;
 };
 
 const emptySummary: UsersSummary = {
@@ -62,11 +68,68 @@ const initialState: UsersState = {
     initialized: false,
     processing: true,
     processingSave: false,
+    offline: false,
+    cachedAt: 0,
 };
 
 const [state, setState] = createStore<UsersState>(initialState);
 
 export const usersState = untrack(() => state);
+
+/** CACHE_KEY is the key of the cached user list in the local storage. */
+const CACHE_KEY = 'aghub.users.cache';
+
+/**
+ * CachedUsers is the last user list this browser fetched successfully.  It is
+ * what the panel shows when the server cannot be reached, so that a restart or
+ * a broken network does not turn the page into an error screen.
+ *
+ * It holds the list only.  The settings are deliberately left out: they carry
+ * the portal deployment token, and a token in the browser storage is readable
+ * by anything that can run a script on the page.
+ */
+type CachedUsers = {
+    /** at is when the cache was taken, in Unix milliseconds. */
+    at: number;
+    users: User[];
+    summary: UsersSummary;
+    domain: string;
+};
+
+/**
+ * readCache returns the cached user list, or null when there is none or it
+ * cannot be parsed.  A cache that cannot be read is not an error: the panel
+ * simply has nothing to show offline.
+ */
+const readCache = (): CachedUsers | null => {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = JSON.parse(raw) as CachedUsers;
+        if (!parsed || !Array.isArray(parsed.users)) {
+            return null;
+        }
+
+        return parsed;
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * writeCache stores the list for the offline case.  A full or unavailable
+ * local storage must not break the panel, so a failure here is ignored.
+ */
+const writeCache = (data: Omit<CachedUsers, 'at'>) => {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), ...data }));
+    } catch {
+        // Ignored on purpose.
+    }
+};
 
 export const getUsers = async () => {
     setState('processing', true);
@@ -76,16 +139,44 @@ export const getUsers = async () => {
         // request; the write side is a POST to its own path.
         const data = await usersList();
 
+        const users = data.users || [];
+        const summary = data.summary || emptySummary;
+        const domain = data.domain || '';
+
         setState({
-            users: data.users || [],
-            summary: data.summary || emptySummary,
+            users,
+            summary,
             settings: data.settings || emptySettings,
-            domain: data.domain || '',
+            domain,
             initialized: true,
             processing: false,
+            offline: false,
+            cachedAt: 0,
         });
+
+        writeCache({ users, summary, domain });
     } catch (error) {
         setState('processing', false);
+
+        // The server is unreachable.  The last list this browser fetched is
+        // still worth showing as long as it is marked as stale, so the panel
+        // says "this is what we knew at 14:20" instead of showing nothing.
+        //
+        // The cache is only ever rendered.  It is never sent back: it is older
+        // than the server by definition, so writing it back would silently
+        // roll back every change made since it was taken.
+        const cached = readCache();
+        if (cached) {
+            setState({
+                users: cached.users,
+                summary: cached.summary || emptySummary,
+                domain: cached.domain || '',
+                initialized: true,
+                offline: true,
+                cachedAt: cached.at,
+            });
+        }
+
         addErrorToast({ error });
     }
 };

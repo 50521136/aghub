@@ -12,6 +12,22 @@
     line-height: var(--lh-t2-normal);
 }
 
+/* The offline notice.  The list below it is readable and the data in it is
+   real, it is only old, so the note is amber and not red: red would read as
+   "your data is broken", which is the opposite of what this state means.  The
+   time is in the message because it is the whole point of the state. */
+.offlineNote {
+    max-width: 620px;
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--default-warning-button);
+    border-radius: 8px;
+    background: var(--default-cards-background);
+    color: var(--default-warning-button);
+    font-size: var(--fs-text-t2);
+    line-height: var(--lh-t2-normal);
+}
+
 .stats {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

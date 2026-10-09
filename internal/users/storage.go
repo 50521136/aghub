@@ -289,21 +289,81 @@ func (m *Manager) save() (err error) {
 // the state file.  It is created next to the state file.
 const BackupDirName = "backup"
 
-// backupKeep is the number of dated backups kept.  Since at most one backup
-// per day is written, this is about a week of history.
-const backupKeep = 7
+// The retention is tiered.  The state file changes constantly, so with only a
+// daily snapshot a corruption found late in the day costs up to 24 hours of
+// users, quotas, check-ins, and feedback.  The hourly tier bounds that loss to
+// an hour, and the daily tier keeps a week of history for the damage that is
+// only noticed later.  Each tier is pruned on its own, so a burst of hourly
+// backups cannot push the daily ones out.
+const (
+	// backupKeepHourly is the number of hourly backups kept, which is also
+	// the age in hours of the oldest state that can be restored.
+	backupKeepHourly = 24
 
-// backupDayLayout is the layout of the date in the backup file names.  It sorts
-// lexicographically in chronological order.
-const backupDayLayout = "2006-01-02"
+	// backupKeepDaily is the number of daily backups kept, which is also the
+	// age in days of the oldest state that can be restored.
+	backupKeepDaily = 7
 
-// backup writes a dated copy of the state file and removes the oldest backups
-// beyond [backupKeep].  At most one backup per day is written.
+	// backupKeepRestore is the number of pre-restore snapshots kept.
+	backupKeepRestore = 5
+)
+
+// The backup file names embed a label in a layout that sorts lexicographically
+// in chronological order.  The hour layout sorts after the day layout of the
+// same day, so a plain name sort lists the backups from the newest to the
+// oldest without parsing the labels.
+const (
+	// backupDayLayout is the label layout of the daily backups.
+	backupDayLayout = "2006-01-02"
+
+	// backupHourLayout is the label layout of the hourly backups.
+	backupHourLayout = "2006-01-02T15"
+
+	// backupRestoreLayout is the label layout of the pre-restore snapshots.
+	// It carries the second so that every restore gets its own snapshot
+	// instead of colliding with the one taken earlier in the same day.
+	backupRestoreLayout = "2006-01-02T150405"
+
+	// backupRestoreSuffix marks the pre-restore snapshots.  It is what keeps
+	// the label from colliding with the hourly one of the same second and
+	// what puts the snapshot into its own retention tier.
+	backupRestoreSuffix = "-before-restore"
+)
+
+// backupTier returns the retention tier of the backup with the given label and
+// the number of backups to keep in it.
+func backupTier(label string) (tier string, keep int) {
+	switch {
+	case strings.HasSuffix(label, backupRestoreSuffix):
+		return "restore", backupKeepRestore
+	case strings.Contains(label, "T"):
+		return "hourly", backupKeepHourly
+	default:
+		return "daily", backupKeepDaily
+	}
+}
+
+// backup writes the dated copies of the state file and removes the oldest
+// backups of every tier beyond its keep count.
 //
-// The backup is taken after a successful write, so it always holds a state
+// The backups are taken after a successful write, so they always hold a state
 // that this program produced, and a state that it was able to read back.
 func (m *Manager) backup() (err error) {
-	return m.backupAs(m.now().In(m.loc).Format(backupDayLayout))
+	now := m.now().In(m.loc)
+
+	// The hourly snapshot is the one that bounds the loss, so it is written
+	// first, and its failure is the one reported.
+	for _, label := range []string{
+		now.Format(backupHourLayout),
+		now.Format(backupDayLayout),
+	} {
+		berr := m.backupAs(label)
+		if berr != nil && err == nil {
+			err = berr
+		}
+	}
+
+	return err
 }
 
 // backupAs is [Manager.backup] with an explicit label instead of the current
@@ -345,7 +405,9 @@ func (m *Manager) backupAs(label string) (err error) {
 }
 
 // pruneBackups removes the oldest backups in dir, keeping the newest
-// [backupKeep] of them.
+// [backupKeepHourly] hourly ones, [backupKeepDaily] daily ones, and
+// [backupKeepRestore] pre-restore ones.  The tiers are counted separately, so
+// a day of hourly snapshots cannot push the daily history out.
 func (m *Manager) pruneBackups(dir string) (err error) {
 	prefix := filepath.Base(m.path) + "."
 
@@ -354,7 +416,7 @@ func (m *Manager) pruneBackups(dir string) (err error) {
 		return fmt.Errorf("reading backup directory: %w", err)
 	}
 
-	names := make([]string, 0, len(entries))
+	tiers := map[string]*tierBackups{}
 
 	for _, e := range entries {
 		name := e.Name()
@@ -364,27 +426,45 @@ func (m *Manager) pruneBackups(dir string) (err error) {
 			continue
 		}
 
-		names = append(names, name)
-	}
+		label := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".bak")
+		tier, keep := backupTier(label)
 
-	if len(names) <= backupKeep {
-		return nil
-	}
+		tb := tiers[tier]
+		if tb == nil {
+			tb = &tierBackups{keep: keep}
+			tiers[tier] = tb
+		}
 
-	// The names embed the date in a sortable layout, so sorting them
-	// lexicographically orders them by age.
-	slices.Sort(names)
+		tb.names = append(tb.names, name)
+	}
 
 	var errs []error
 
-	for _, name := range names[:len(names)-backupKeep] {
-		rerr := os.Remove(filepath.Join(dir, name))
-		if rerr != nil {
-			errs = append(errs, rerr)
+	for _, tb := range tiers {
+		if len(tb.names) <= tb.keep {
+			continue
+		}
+
+		// The names embed the label in a sortable layout, so sorting them
+		// lexicographically orders them by age.
+		slices.Sort(tb.names)
+
+		for _, name := range tb.names[:len(tb.names)-tb.keep] {
+			rerr := os.Remove(filepath.Join(dir, name))
+			if rerr != nil {
+				errs = append(errs, rerr)
+			}
 		}
 	}
 
 	return errors.Join(errs...)
+}
+
+// tierBackups is the set of the backups of one retention tier and the number
+// of them to keep.
+type tierBackups struct {
+	keep  int
+	names []string
 }
 
 // copyFile copies src to dst, creating dst with mode 0o600.  The copy is
@@ -535,10 +615,11 @@ func (m *Manager) RestoreBackup(name string) (n int, err error) {
 		return 0, fmt.Errorf("users: backup %q contains no users", name)
 	}
 
-	// Keep the state that is about to be replaced.  The label is dated, so it
-	// is listed and pruned along with the daily ones, and the "-before-restore"
-	// suffix keeps it from colliding with the backup of the same day.
-	label := m.now().In(m.loc).Format(backupDayLayout) + "-before-restore"
+	// Keep the state that is about to be replaced, so that a restore can
+	// itself be undone.  The label carries the second, so every restore gets
+	// its own snapshot instead of colliding with the one taken earlier in
+	// the same day, and the suffix puts it into the restore tier.
+	label := m.now().In(m.loc).Format(backupRestoreLayout) + backupRestoreSuffix
 
 	err = m.backupAs(label)
 	if err != nil {
