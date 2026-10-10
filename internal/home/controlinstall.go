@@ -649,6 +649,39 @@ func (web *webAPI) startMods(ctx context.Context) (err error) {
 		return err
 	}
 
+	// The user portal is normally initialized by the !isFirstRun branch of
+	// setupContext.  That branch does not run when the instance is configured
+	// through the installation wizard, because the wizard completes inside the
+	// very process that started in the first-run mode.  Without initializing it
+	// here the portal handlers are never registered, and every request below
+	// /portal/ -- along with the administrator's portal package download and
+	// mail test -- answers 404 until the service is restarted.
+	//
+	// It has to happen after initDNS, because the portal serves the quota users
+	// and reads the query log, both of which that call creates.
+	//
+	// The guard keeps a second call from registering the same patterns twice,
+	// which panics.
+	if globalContext.portal == nil {
+		// The portal may have a listener of its own, in which case it must not
+		// be reachable through the web UI as well.
+		portalReg := web.conf.mux
+		if web.conf.PortalAddr.IsValid() {
+			portalReg = web.conf.PortalMux
+		}
+
+		err = initPortal(
+			ctx,
+			web.baseLogger,
+			aghhttp.NewPlainRegistrar(portalReg),
+			web.httpReg,
+			web.conf.workDir,
+		)
+		if err != nil {
+			return fmt.Errorf("initializing the user portal: %w", err)
+		}
+	}
+
 	// The web server is already serving requests during the installation, so
 	// set the DoH server before starting the DNS one to avoid a window where
 	// DoH requests are answered by the authentication middleware.
