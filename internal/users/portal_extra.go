@@ -153,11 +153,14 @@ func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
 			id = i.IDs[0]
 		}
 
-		// The latency shown follows the window the board shows, so that one
-		// card never mixes a day of requests with a lifetime average.
+		// The latency and the filtering counts shown follow the window the
+		// board shows, so that one card never mixes a day of requests with
+		// a lifetime of filtering.
 		avg, samples := i.AvgLatencyTodayMS, i.LatencyTodaySamples
+		blocked, passed := i.BlockedToday, i.PassedToday
 		if order == RankByTotal {
 			avg, samples = i.AvgLatencyMS, i.LatencySamples
+			blocked, passed = i.Blocked, i.Passed
 		}
 
 		r = append(r, RankEntry{
@@ -168,8 +171,8 @@ func (m *Manager) Ranking(limit int, order RankOrder) (r []RankEntry) {
 			RequestsToday:  i.RequestsToday,
 			AvgLatencyMS:   avg,
 			LatencySamples: samples,
-			Blocked:        i.Blocked,
-			Passed:         i.Passed,
+			Blocked:        blocked,
+			Passed:         passed,
 			Avatar:         i.Avatar,
 			LastSeen:       i.LastSeen,
 		})

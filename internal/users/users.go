@@ -201,6 +201,14 @@ type usage struct {
 	hourMicros  atomic.Int64
 	hourSamples atomic.Int64
 
+	// hourBlocked and hourPassed are the filtering outcome of the queries
+	// counted in the hour bucket that hourStart points to.  They exist
+	// because the board has a today window: without them the today board
+	// could only show the lifetime totals, and one card would then mix a
+	// day of requests with a lifetime of filtering.
+	hourBlocked atomic.Int64
+	hourPassed  atomic.Int64
+
 	// hoursTime maps the Unix timestamp of an hour bucket to the durations
 	// counted in it, for the buckets inside the window above.  It is the
 	// latency counterpart of hours and is published the same way.
@@ -278,6 +286,14 @@ type usageState struct {
 	HourMicros  int64 `json:"hour_micros,omitempty"`
 	HourSamples int64 `json:"hour_samples,omitempty"`
 
+	// HourBlocked and HourPassed are the filtering outcome of the hour bucket
+	// that is currently open.  They are persisted for the same reason the
+	// request count of the open bucket is: a counter that only lives in
+	// memory is lost on every restart, and the day's figures would then drop
+	// the part of the day that has already been counted.
+	HourBlocked int64 `json:"hour_blocked,omitempty"`
+	HourPassed  int64 `json:"hour_passed,omitempty"`
+
 	// HoursTime is the latency counterpart of Hours: it maps the Unix
 	// timestamp of an hour bucket to the durations counted in it.
 	HoursTime map[int64]timeBucket `json:"hours_time,omitempty"`
@@ -314,17 +330,34 @@ type usageState struct {
 // the number of queries it was summed over.  Both are kept because an average
 // needs the two, and a bucket with no samples must be distinguishable from one
 // whose samples all took zero time.
+//
+// It also carries the filtering outcome of the same hour.  They ride along in
+// this bucket rather than in a second ring because the board reads all three
+// figures for one window: keeping them together is what makes "today" mean the
+// same thing for the request count, the average and the filtering counts.
 type timeBucket struct {
 	// Micros is the sum of the durations, in microseconds.
 	Micros int64 `json:"micros"`
 
 	// Samples is the number of durations summed into Micros.
 	Samples int64 `json:"samples"`
+
+	// Blocked is the number of queries a filtering rule rejected.
+	Blocked int64 `json:"blocked,omitempty"`
+
+	// Passed is the number of queries that matched a filtering rule but were
+	// allowed by the allow-list.
+	Passed int64 `json:"passed,omitempty"`
 }
 
 // add folds another bucket into b.
 func (b timeBucket) add(other timeBucket) (sum timeBucket) {
-	return timeBucket{Micros: b.Micros + other.Micros, Samples: b.Samples + other.Samples}
+	return timeBucket{
+		Micros:  b.Micros + other.Micros,
+		Samples: b.Samples + other.Samples,
+		Blocked: b.Blocked + other.Blocked,
+		Passed:  b.Passed + other.Passed,
+	}
 }
 
 // average returns the mean duration of the bucket in milliseconds, and the
@@ -1079,10 +1112,12 @@ func (m *Manager) RecordResult(clientID string, blocked, passed bool) {
 
 	if blocked {
 		e.usage.blocked.Add(1)
+		e.usage.hourBlocked.Add(1)
 	}
 
 	if passed {
 		e.usage.passed.Add(1)
+		e.usage.hourPassed.Add(1)
 	}
 
 	m.dirty.Store(true)
@@ -1219,6 +1254,8 @@ func (m *Manager) flushHoursLocked(now time.Time) {
 			e.recordHourTime(start, timeBucket{
 				Micros:  e.hourMicros.Swap(0),
 				Samples: e.hourSamples.Swap(0),
+				Blocked: e.hourBlocked.Swap(0),
+				Passed:  e.hourPassed.Swap(0),
 			})
 		}
 
@@ -1341,8 +1378,19 @@ func (e *usage) recordLatency(d time.Duration) {
 // It mirrors [usage.requestsToday] and therefore answers for the same window
 // the board counts in, so the two figures on one card describe one period.
 func (e *usage) latencyToday(now time.Time) (ms float64, samples int64) {
+	return e.todayBucket(now).average()
+}
+
+// todayBucket returns the sum of the hour buckets that fall inside the day in
+// progress in [rankLocation], the hour in progress included.
+//
+// Every per-day figure the board shows is read off this one sum.  Deriving them
+// together is what keeps a card self-consistent: the request count, the average
+// latency and the filtering counts then all describe the same period, instead
+// of three of them following the board's window and the fourth reporting a
+// lifetime total.
+func (e *usage) todayBucket(now time.Time) (sum timeBucket) {
 	start := dayStartOf(now, rankLocation)
-	var sum timeBucket
 
 	if h := e.hoursTime.Load(); h != nil {
 		for s, b := range *h {
@@ -1352,14 +1400,19 @@ func (e *usage) latencyToday(now time.Time) (ms float64, samples int64) {
 		}
 	}
 
+	// The hour in progress has not been rotated into the ring yet, so it is
+	// added separately.  hourStart is 0 right after a start, before the first
+	// flush has opened a bucket; that hour is the current one either way.
 	if s := e.hourStart.Load(); s == 0 || s >= start {
 		sum = sum.add(timeBucket{
 			Micros:  e.hourMicros.Load(),
 			Samples: e.hourSamples.Load(),
+			Blocked: e.hourBlocked.Load(),
+			Passed:  e.hourPassed.Load(),
 		})
 	}
 
-	return sum.average()
+	return sum
 }
 
 // latencyTotal returns the mean query duration of the account over its whole
@@ -1538,6 +1591,13 @@ type Info struct {
 	// allowed by the allow-list.
 	Passed int64 `json:"passed"`
 
+	// BlockedToday and PassedToday are the same two figures over the day in
+	// progress, counted from midnight in [rankLocation].  They exist for the
+	// same reason the latency has a today variant: a page that reports a day
+	// of requests must not put a lifetime of filtering next to it.
+	BlockedToday int64 `json:"blocked_today"`
+	PassedToday  int64 `json:"passed_today"`
+
 	// PeriodStart is the Unix timestamp of the start of the current period.
 	PeriodStart int64 `json:"period_start"`
 
@@ -1599,7 +1659,12 @@ func (m *Manager) info(e *entry) (i *Info) {
 		HasPortalPassword: m.HasPortalPassword(u.UID),
 	}
 
-	i.AvgLatencyTodayMS, i.LatencyTodaySamples = e.usage.latencyToday(m.now())
+	// One pass over the hour ring yields every per-day figure, so all four of
+	// them describe the same window and a card cannot mix periods.
+	today := e.usage.todayBucket(m.now())
+	i.AvgLatencyTodayMS, i.LatencyTodaySamples = today.average()
+	i.BlockedToday, i.PassedToday = today.Blocked, today.Passed
+
 	i.AvgLatencyMS, i.LatencySamples = e.usage.latencyTotal()
 
 	if u.ExpiresAt > 0 {

@@ -98,6 +98,8 @@ func (m *Manager) load() (err error) {
 			us.hourCount.Store(st.HourCount)
 			us.hourMicros.Store(st.HourMicros)
 			us.hourSamples.Store(st.HourSamples)
+			us.hourBlocked.Store(st.HourBlocked)
+			us.hourPassed.Store(st.HourPassed)
 			us.totalMicros.Store(st.TotalMicros)
 			us.totalSamples.Store(st.TotalSamples)
 			us.checkinDay.Store(st.CheckinDay)
@@ -180,6 +182,8 @@ func (m *Manager) save() (err error) {
 				HourCount:    us.hourCount.Load(),
 				HourMicros:   us.hourMicros.Load(),
 				HourSamples:  us.hourSamples.Load(),
+				HourBlocked:  us.hourBlocked.Load(),
+				HourPassed:   us.hourPassed.Load(),
 				TotalMicros:  us.totalMicros.Load(),
 				TotalSamples: us.totalSamples.Load(),
 				CheckinDay:   us.checkinDay.Load(),

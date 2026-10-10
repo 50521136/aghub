@@ -6,8 +6,14 @@
  * 默认给前者 —— 累计榜的名次几天都不动，新来的人在上面看不到自己。
  *
  * 卡片式：每张卡是一个人，名次、头像、名字一行，解析量做进度条，下面跟
- * 拦截量和防误杀。比纯列表多花一点竖向空间，但手机上拇指扫过去能直接
- * 读出「谁解析得多、谁拦得多」。
+ * 拦截、防误杀、平均延迟三格。比纯列表多花一点竖向空间，但手机上拇指
+ * 扫过去能直接读出「谁解析得多、谁拦得多」。
+ *
+ * 三格数字必须和解析量同一个口径：今日榜上就该是今天的拦截量和今天的
+ * 防误杀。曾经它们取的是累计值，于是今日榜的一张卡上会同时出现
+ * 「今日 14983 次解析」和「拦截 9478 + 防误杀 17533」—— 两个过滤数字加
+ * 起来比今日总量还大。口径由后端按榜单窗口给（blocked/passed 两个字段
+ * 跟着 order 切换），页面不自己算。
  */
 
 declare(strict_types=1);
@@ -118,11 +124,30 @@ $scope = $is_today ? '今日' : '累计';
             <span class="rk-total" title="<?= h(num_h($n)) ?>"><?= h(num_h($n)) ?><small><?= h($scope) ?></small></span>
           </span>
           <span class="rk-bar"><i style="width:<?= $w ?>%"></i></span>
+          <?php
+            // 拦截率 = 拦截 / (拦截 + 防误杀)，也就是「命中过滤规则的查询里
+            // 有多少被真正拦掉」。只看绝对量的话，一个用量大的人拦截量天然
+            // 就高，比不出谁的白名单更准。命中数为 0 时不显示 —— 「0%」和
+            // 「没有样本」是两件事，摆个 0% 出去会被读成「一条都没拦到」。
+            $blk0 = max(0, $blk);
+            $pas0 = max(0, $pas);
+            $hits = $blk0 + $pas0;
+            $rate = $hits > 0 ? (int) round($blk0 * 100 / $hits) : -1;
+          ?>
           <?php if ($blk >= 0 || $pas >= 0): ?>
-            <span class="rk-stats">
-              <span><b><?= h(num_h(max(0, $blk))) ?></b>拦截量</span>
-              <span><b><?= h(num_h(max(0, $pas))) ?></b>防误杀</span>
-              <span><b><?= h(ms_h($lat, $lat_n)) ?></b>平均延迟</span>
+            <span class="rk-metrics">
+              <span class="rk-m blk">
+                <b><?= h(big_h($blk0)) ?></b>
+                <span>拦截<?= $rate >= 0 ? ' ' . $rate . '%' : '' ?></span>
+              </span>
+              <span class="rk-m pas">
+                <b><?= h(big_h($pas0)) ?></b>
+                <span>防误杀</span>
+              </span>
+              <span class="rk-m">
+                <b><?= h(ms_h($lat, $lat_n)) ?></b>
+                <span>平均延迟</span>
+              </span>
             </span>
           <?php endif; ?>
         </span>
